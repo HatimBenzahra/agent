@@ -71,7 +71,7 @@ FEEDBACK: [brief explanation]
 """
 
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": "You are a precise task validator. Be concise and objective."},

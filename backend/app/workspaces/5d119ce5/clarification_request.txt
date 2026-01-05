@@ -1,0 +1,19 @@
+Dear User,
+
+I noticed you requested: "genere moi un fichier pdf contenant ca"
+
+However, I need more information about what content you want in the PDF file. Could you please specify:
+
+1. What text content should be included? (e.g., a report, document, essay, etc.)
+2. What is the structure? (e.g., title page, sections, chapters, etc.)
+3. Do you need any specific elements? (e.g., tables, bullet points, images, etc.)
+4. What should be the title of the document?
+5. Do you have any specific formatting requirements?
+
+For example, you could say:
+- "Generate a PDF with a sales report for Q4 2024"
+- "Create a PDF of my resume/CV"
+- "Make a PDF with lecture notes on Python programming"
+- "Generate a PDF invoice for services rendered"
+
+Alternatively, I have a ready-to-use PDF generator script (`pdf_generator.py`) that can create sample reports. If you'd like me to generate one of those as an example while waiting for your specifications, please let me know!

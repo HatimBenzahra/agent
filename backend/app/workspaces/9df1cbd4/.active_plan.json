@@ -1,0 +1,35 @@
+{
+  "plan": [
+    {
+      "id": "step_1",
+      "objective": "Obtenir et analyser le PDF",
+      "context": "Demander \u00e0 l'utilisateur de fournir le PDF ou son contenu textuel pour \u00e9valuer les probl\u00e8mes de style et de clart\u00e9.",
+      "status": "executing"
+    },
+    {
+      "id": "step_2",
+      "objective": "Identifier les faiblesses sp\u00e9cifiques",
+      "context": "Analyser le texte pour rep\u00e9rer les probl\u00e8mes : vocabulaire pauvre, phrases mal construites, manque de structure, ton inadapt\u00e9, etc.",
+      "status": "pending"
+    },
+    {
+      "id": "step_3",
+      "objective": "D\u00e9finir l'objectif de style",
+      "context": "Clarifier avec l'utilisateur le ton et le registre souhait\u00e9s (ex: plus formel, plus fluide, plus persuasif) pour la r\u00e9\u00e9criture.",
+      "status": "pending"
+    },
+    {
+      "id": "step_4",
+      "objective": "R\u00e9\u00e9crire et am\u00e9liorer le contenu",
+      "context": "Retravailler le texte en appliquant les principes de style d\u00e9finis : enrichir le vocabulaire, restructurer les phrases, am\u00e9liorer la fluidit\u00e9 et la clart\u00e9.",
+      "status": "pending"
+    },
+    {
+      "id": "step_5",
+      "objective": "Pr\u00e9senter le texte am\u00e9lior\u00e9",
+      "context": "Fournir \u00e0 l'utilisateur la version r\u00e9vis\u00e9e du texte, en expliquant bri\u00e8vement les principales am\u00e9liorations apport\u00e9es.",
+      "status": "pending"
+    }
+  ],
+  "last_status": "in_progress"
+}

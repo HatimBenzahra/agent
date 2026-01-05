@@ -5,7 +5,7 @@ SubAgent module - Executes individual tasks in isolation.
 import json
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, field
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 
 @dataclass
@@ -40,13 +40,15 @@ class SubAgent:
         self,
         task: TaskDefinition,
         tools_registry,
-        llm_client: OpenAI,
-        model: str
+        llm_client: AsyncOpenAI,
+        model: str,
+        pipeline=None  # Optional SessionPipeline for event logging
     ):
         self.task = task
         self.tools = tools_registry
         self.client = llm_client
         self.model = model
+        self.pipeline = pipeline
         
         # Track execution
         self.tools_used = []
@@ -57,40 +59,51 @@ class SubAgent:
     async def execute(self, callback: Optional[Callable] = None) -> TaskResult:
         """Execute the task using tools."""
         
-        system_prompt = f"""You are a specialized task executor.
-
+        # Loop settings
+        max_iterations = 15
+        
+        system_prompt = f"""You are an autonomous AI problem solver.
+        
 YOUR TASK:
 {self.task.objective}
 
 CONTEXT:
 {self.task.context}
 
+CORE BEHAVIOR:
+1. **ANALYZE**: Understand what needs to be done. If you don't know how, SEARCH or EXPLORE first.
+2. **ACT**: Use your tools (terminal, write_file, etc.) to make progress.
+3. **OBSERVE**: Watch the output of your commands. Did it work? Did it fail?
+4. **ITERATE**: 
+   - If success -> Great, move to next step.
+   - If failure -> READ THE ERROR. Analyze it. Propose a fix. Try again.
+   - **DO NOT GIVE UP**. You are expected to solve problems, not just report them.
+
+TOOLS AVAILABLE:
+- `write_file`: Create/edit files. (Use this for code, configs, notes).
+- `terminal`: Run ANY shell command. (python, pip, ls, grep, curl, etc.).
+- `read_file`: Read content of files.
+- `list_files`: See directory structure.
+- `search`: Search the web (if available) or codebase.
+
 CRITICAL RULES:
-1. You MUST use the provided tools to complete the task.
-2. If you need to create a file, you MUST use the `write_file` tool.
-3. DO NOT just output the code in your response. The user CANNOT see your response code, only the files you create.
-4. If you write code, you MUST run it using the `terminal` tool to verify it works.
-5. Create files first, then execute them.
+- **NO HARDCODED WORKFLOWS**: You decide the best path. You can run python code, shell scripts, or just check files.
+- **SELF-CORRECTION**: If a command fails (e.g. 'command not found'), try an alternative. If a library is missing, install it.
+- **BE RESOURCEFUL**: If you need to manipulate a PDF and don't know how, write a script to check available libraries first.
+- **FINAL OUTPUT**: Your goal is to achieve the OBJECTIVE. The output should be the result of that achievement.
 
-EXAMPLE:
-- User: "Create a python script"
-- Bad Response: "Here is the code: print('hello')"
-- Good Response: calls write_file('script.py', "print('hello')") then calls terminal('python script.py')
+EXAMPLE - User wants to "check disk space":
+- You: terminal('df -h') -> Done.
 
-Start by using a tool immediately.
+EXAMPLE - User wants to "convert CSV to JSON":
+- You: 
+  1. Check if input file exists (ls).
+  2. Write a customized python script to convert it.
+  3. Run the script.
+  4. If script fails with "pandas not found", you runs "pip install pandas" and tries again.
 
-ERROR RECOVERY:
-- If a command fails (e.g., 'command not found', 'import error'), YOU MUST FIX IT.
-- Example: If 'pip: command not found', try 'pip3' or 'python -m pip'.
-- Example: If 'ModuleNotFoundError', install the module using 'pip install ...'.
-- DO NOT GIVE UP on the first error. Try at least 2 different solutions.
-
-CHECKLIST BEFORE ANSWERING:
-- Did I write the file? (Use write_file)
-- Did I run the code? (Use terminal)
-- Did I see the output?
-- If it failed, did I try to fix it?
-- If I am just talking, I AM FAILING. I MUST ACT."""
+You have {max_iterations} turns to solve this. Make them count.
+Start NOW."""
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -99,13 +112,12 @@ CHECKLIST BEFORE ANSWERING:
         
         try:
             # Loop until no more tool calls
-            max_iterations = 15
             iteration = 0
             
             while iteration < max_iterations:
                 iteration += 1
                 
-                response = self.client.chat.completions.create(
+                response = await self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
                     tools=self.tools.list_tools(),
@@ -202,6 +214,14 @@ CHECKLIST BEFORE ANSWERING:
         
         if tool_name == "terminal" and result.output:
             self.terminal_outputs.append(result.output)
+            # Log to pipeline
+            if self.pipeline:
+                self.pipeline.add_event(
+                    "terminal_command",
+                    command=args.get('command', ''),
+                    output=result.output[:500],  # Truncate
+                    success=result.success
+                )
         
         # Notify via callback
         if callback:

@@ -5,10 +5,13 @@ Handles projects, chat, and terminal streaming.
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from typing import Optional
 import traceback
 import json
+import os
+import mimetypes
 
 try:
     from .agent import OrchestratorAgent
@@ -110,9 +113,34 @@ async def list_files(project_id: str, path: str = "."):
 
 
 @router.get("/api/projects/{project_id}/files/content")
-async def read_file(project_id: str, path: str):
-    """Read file content."""
+async def read_file(project_id: str, path: str, raw: bool = False):
+    """Read file content. Use raw=true for binary files like PDFs."""
     sandbox = sandbox_manager.get_or_create(project_id)
+
+    # For raw/binary files (PDF, images, etc.)
+    if raw:
+        file_path = sandbox.workspace_path / path
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+
+        # Security check - ensure path is within workspace
+        try:
+            file_path.resolve().relative_to(sandbox.workspace_path.resolve())
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Detect mime type
+        mime_type, _ = mimetypes.guess_type(str(file_path))
+        if mime_type is None:
+            mime_type = "application/octet-stream"
+
+        return FileResponse(
+            path=str(file_path),
+            media_type=mime_type,
+            filename=os.path.basename(path)
+        )
+
+    # For text files (default behavior)
     success, content = sandbox.read_file(path)
     if not success:
         raise HTTPException(status_code=404, detail=content)
@@ -159,6 +187,7 @@ async def websocket_chat(websocket: WebSocket, project_id: str):
     """
     WebSocket endpoint for chat with the agent.
     Streams tool calls and results in real-time.
+    Includes ping-pong heartbeat to keep connection alive.
     """
     await websocket.accept()
     print(f"Client connected to project: {project_id}")
@@ -176,36 +205,54 @@ async def websocket_chat(websocket: WebSocket, project_id: str):
     try:
         while True:
             data = await websocket.receive_text()
+
+            # Handle ping-pong heartbeat to keep connection alive
+            if data == "ping":
+                await websocket.send_text("pong")
+                continue
+
             print(f"[{project_id}] Received: {data}")
 
             # Define callback to stream events to client
             async def progress_callback(event):
-                await websocket.send_json(event)
+                try:
+                    await websocket.send_json(event)
+                except RuntimeError:
+                    # Connection closed
+                    pass
+                except Exception as e:
+                    print(f"Error sending callback event: {e}")
 
             try:
                 # Run agent with callback
                 response = await agent.run(data, callback=progress_callback)
 
                 # Send final answer
-                await websocket.send_json({
-                    "type": "result",
-                    "content": response
-                })
+                try:
+                    await websocket.send_json({
+                        "type": "result",
+                        "content": response
+                    })
 
-                # Send updated file list
-                files = agent.sandbox.list_files() if agent.sandbox else []
-                await websocket.send_json({
-                    "type": "files_updated",
-                    "files": [f.__dict__ for f in files]
-                })
+                    # Send updated file list
+                    files = agent.sandbox.list_files() if agent.sandbox else []
+                    await websocket.send_json({
+                        "type": "files_updated",
+                        "files": [f.__dict__ for f in files]
+                    })
+                except RuntimeError:
+                    pass
 
             except Exception as e:
                 print(f"Error executing agent: {e}")
                 traceback.print_exc()
-                await websocket.send_json({
-                    "type": "error",
-                    "content": str(e)
-                })
+                try:
+                    await websocket.send_json({
+                        "type": "error",
+                        "content": str(e)
+                    })
+                except RuntimeError:
+                    pass
 
     except WebSocketDisconnect:
         print(f"Client disconnected from project: {project_id}")

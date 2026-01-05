@@ -1,5 +1,20 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, Terminal as TerminalIcon, FolderKanban, Menu, X, FileCode } from 'lucide-react'
+import {
+  Send,
+  Bot,
+  User,
+  Loader2,
+  AlertCircle,
+  Terminal as TerminalIcon,
+  FolderKanban,
+  Menu,
+  X,
+  FileCode,
+  Sparkles,
+  Wifi,
+  WifiOff,
+  ChevronDown
+} from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import { Terminal } from './components/Terminal'
@@ -8,6 +23,7 @@ import { FileExplorer } from './components/FileExplorer'
 import type { FileInfo } from './components/FileExplorer'
 import { ProjectSelector } from './components/ProjectSelector'
 import { CodeEditor } from './components/CodeEditor'
+import { PDFViewer } from './components/PDFViewer'
 import { PlanVisualizer } from './components/PlanVisualizer'
 import type { StepEvent } from './components/PlanVisualizer'
 
@@ -38,6 +54,9 @@ type Message = {
 
 const API_BASE = 'http://localhost:8000'
 
+// Helper to check if file is PDF
+const isPdfFile = (path: string) => path.toLowerCase().endsWith('.pdf')
+
 function App() {
   // Project state
   const [projects, setProjects] = useState<Project[]>([])
@@ -50,7 +69,7 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [currentToolCalls, setCurrentToolCalls] = useState<ToolCall[]>([])
 
-  // Terminal state - populated by agent's tool calls
+  // Terminal state
   const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([])
 
   // Multi-agent plan state
@@ -62,12 +81,15 @@ function App() {
   // UI state
   const [isConnected, setIsConnected] = useState(false)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
-  
+
   // Responsive & Layout state
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isEditorFullscreen, setIsEditorFullscreen] = useState(false)
   const [isTerminalVisible, setIsTerminalVisible] = useState(false)
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false)
+
+  // Live activity indicator
+  const [lastActivity, setLastActivity] = useState<string | null>(null)
 
   const ws = useRef<WebSocket | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -77,7 +99,7 @@ function App() {
     fetchProjects()
   }, [])
 
-  // Auto-hide/show terminal logic
+  // Auto-show terminal when entries arrive
   useEffect(() => {
     if (terminalEntries.length > 0) {
       setIsTerminalVisible(true)
@@ -110,57 +132,81 @@ function App() {
     setCurrentPlan([])
     setValidations({})
     setStepEvents({})
+    setLastActivity(null)
 
     // Connect to project chat
     const socket = new WebSocket(`ws://localhost:8000/ws/chat/${currentProject.id}`)
     ws.current = socket
 
+    // Ping interval to keep connection alive
+    let pingInterval: ReturnType<typeof setInterval> | null = null
+
     socket.onopen = () => {
       setIsConnected(true)
+      // Send ping every 30 seconds to keep connection alive
+      pingInterval = setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send('ping')
+        }
+      }, 30000)
     }
 
     socket.onclose = () => {
       setIsConnected(false)
+      if (pingInterval) {
+        clearInterval(pingInterval)
+        pingInterval = null
+      }
     }
 
     socket.onmessage = (event) => {
+      // Ignore pong responses
+      if (event.data === 'pong') return
+
       const data = JSON.parse(event.data)
 
       if (data.type === 'status') {
-        // Status update (thinking, etc.)
+        setLastActivity(data.message || 'Processing...')
       } else if (data.type === 'plan_created') {
         setCurrentPlan(data.plan || [])
         setValidations({})
         setStepEvents({})
+        setLastActivity('Plan created')
       } else if (data.type === 'step_started') {
         setCurrentStepId(data.step_id)
-        setCurrentPlan(prev => prev.map(step => 
+        setCurrentPlan(prev => prev.map(step =>
           step.id === data.step_id ? { ...step, status: 'executing' } : step
         ))
+        const step = currentPlan.find(s => s.id === data.step_id)
+        setLastActivity(step ? `Executing: ${step.objective}` : 'Executing step...')
       } else if (data.type === 'step_validating') {
-        setCurrentPlan(prev => prev.map(step => 
+        setCurrentPlan(prev => prev.map(step =>
           step.id === data.step_id ? { ...step, status: 'validating' } : step
         ))
+        setLastActivity('Validating step...')
       } else if (data.type === 'step_completed') {
-        setCurrentPlan(prev => prev.map(step => 
+        setCurrentPlan(prev => prev.map(step =>
           step.id === data.step_id ? { ...step, status: 'completed' } : step
         ))
         if (data.validation) {
           setValidations(prev => ({ ...prev, [data.step_id]: data.validation }))
         }
+        setLastActivity('Step completed')
       } else if (data.type === 'step_failed') {
-        setCurrentPlan(prev => prev.map(step => 
+        setCurrentPlan(prev => prev.map(step =>
           step.id === data.step_id ? { ...step, status: 'failed' } : step
         ))
         if (data.validation) {
           setValidations(prev => ({ ...prev, [data.step_id]: data.validation }))
         }
+        setLastActivity('Step failed')
       } else if (data.type === 'tool_call') {
         setCurrentToolCalls(prev => [...prev, {
           tool: data.tool,
           arguments: data.arguments,
           status: 'executing'
         }])
+        setLastActivity(`Using tool: ${data.tool}`)
 
         if (data.tool === 'terminal' && data.arguments?.command) {
           setTerminalEntries(prev => [...prev, {
@@ -187,48 +233,48 @@ function App() {
         }
 
         if (['write_file', 'delete_file'].includes(data.tool)) {
-          fetchFiles() // Refresh files list
+          fetchFiles()
         }
       } else if (data.type === 'sub_agent_tool') {
         const args = data.arguments || {}
-        
-        // 1. Update Terminal (Real-time)
+
+        // Update Terminal
         if (data.tool === 'terminal' && args.command) {
-          // Add command entry
           setTerminalEntries(prev => [...prev, {
             type: 'command',
             content: args.command,
             timestamp: new Date()
           }])
-          
-          // Add output entry if present
+
           if (data.output) {
-             setTerminalEntries(prev => [...prev, {
-               type: data.success ? 'output' : 'error',
-               content: data.output,
-               timestamp: new Date()
-             }])
+            setTerminalEntries(prev => [...prev, {
+              type: data.success ? 'output' : 'error',
+              content: data.output,
+              timestamp: new Date()
+            }])
           }
         }
 
-        // 2. Update Files (Real-time)
+        // Update Files
         if (['write_file', 'delete_file'].includes(data.tool) && data.success) {
-          fetchFiles() 
+          fetchFiles()
         }
 
-        // 3. Update Plan Visualizer
+        // Update Plan Visualizer
         if (data.task_id && data.tool) {
           let message = `Using tool: ${data.tool}`
-          
+
           if (data.tool === 'terminal') {
             message = `Executing: ${args.command || 'script'}`
           } else if (data.tool === 'write_file') {
-            message = `Writing file: ${args.target_file || args.path || 'unknown'}`
+            message = `Writing: ${args.target_file || args.path || 'file'}`
           } else if (data.tool === 'read_file') {
-            message = `Reading file: ${args.path || 'unknown'}`
+            message = `Reading: ${args.path || 'file'}`
           } else if (data.tool === 'list_files') {
-            message = `Listing files in: ${args.path || '.'}`
+            message = `Listing: ${args.path || '.'}`
           }
+
+          setLastActivity(message)
 
           const newEvent: StepEvent = {
             type: 'tool',
@@ -240,9 +286,9 @@ function App() {
 
           setStepEvents(prev => {
             const current = prev[data.task_id] || []
-            const exists = current.some(e => 
-              e.tool === data.tool && 
-              e.message === message && 
+            const exists = current.some(e =>
+              e.tool === data.tool &&
+              e.message === message &&
               Math.abs(e.timestamp - newEvent.timestamp) < 100
             )
             if (exists) return prev
@@ -257,6 +303,7 @@ function App() {
         }])
         setCurrentToolCalls([])
         setIsProcessing(false)
+        setLastActivity(null)
         fetchFiles()
       } else if (data.type === 'files_updated') {
         setFiles(data.files)
@@ -268,6 +315,7 @@ function App() {
         }])
         setCurrentToolCalls([])
         setIsProcessing(false)
+        setLastActivity(null)
       }
     }
 
@@ -275,6 +323,10 @@ function App() {
     fetchChatHistory()
 
     return () => {
+      // Clean up ping interval
+      if (pingInterval) {
+        clearInterval(pingInterval)
+      }
       if (socket.readyState === WebSocket.OPEN) {
         socket.close()
       }
@@ -371,266 +423,419 @@ function App() {
     setIsWorkspaceOpen(!isWorkspaceOpen)
   }
 
-  return (
-    <div className="flex h-screen bg-neutral-950 text-neutral-200 font-sans overflow-hidden">
-      {/* 1. Left Sidebar - Projects (Conversations) */}
-      <div className={`w-64 border-r border-neutral-800 bg-neutral-900 flex flex-col shrink-0 ${isMobileMenuOpen ? 'fixed inset-y-0 left-0 z-50' : 'hidden md:flex'}`}>
-        <div className="p-4 border-b border-neutral-800 flex items-center justify-between">
-          <div className="flex items-center gap-2 font-medium">
-            <Bot size={20} className="text-blue-500" />
-            <span>Agent Chat</span>
+  const handleFileSelect = (file: FileInfo) => {
+    setSelectedFile(file.path)
+  }
+
+  // Render file viewer based on file type
+  const renderFileViewer = () => {
+    if (!selectedFile || !currentProject) {
+      return (
+        <div className="flex-1 flex items-center justify-center text-zinc-600">
+          <div className="text-center">
+            <FileCode size={40} className="mx-auto mb-3 opacity-50" />
+            <p className="text-sm">Select a file to view</p>
           </div>
-          <button className="md:hidden" onClick={() => setIsMobileMenuOpen(false)}>
-            <X size={16} />
-          </button>
         </div>
-        
-        <div className="flex-1 overflow-y-auto p-2">
-            <ProjectSelector 
-              currentProject={currentProject}
-              onSelect={setCurrentProject}
-              projects={projects}
-              onCreate={handleCreateProject}
-              onDelete={deleteProject}
-            />
+      )
+    }
+
+    if (isPdfFile(selectedFile)) {
+      return (
+        <PDFViewer
+          projectId={currentProject.id}
+          filePath={selectedFile}
+          onClose={() => setSelectedFile(null)}
+          isFullscreen={isEditorFullscreen}
+          onToggleFullscreen={handleToggleFullscreen}
+        />
+      )
+    }
+
+    return (
+      <CodeEditor
+        projectId={currentProject.id}
+        filePath={selectedFile}
+        onClose={() => setSelectedFile(null)}
+        readOnly={false}
+        isFullscreen={isEditorFullscreen}
+        onToggleFullscreen={handleToggleFullscreen}
+      />
+    )
+  }
+
+  return (
+    <div className="flex h-screen bg-zinc-950 text-zinc-200 font-sans overflow-hidden">
+      {/* Left Sidebar - Projects */}
+      <div className={`w-72 border-r border-zinc-800/50 bg-zinc-900/50 flex flex-col shrink-0 ${isMobileMenuOpen ? 'fixed inset-y-0 left-0 z-50' : 'hidden md:flex'}`}>
+        <div className="p-4 border-b border-zinc-800/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-gradient-to-br from-blue-500/20 to-violet-500/20">
+                <Bot size={18} className="text-blue-400" />
+              </div>
+              <span className="font-semibold text-zinc-100">Agent Studio</span>
+            </div>
+            <button className="md:hidden p-1.5 hover:bg-zinc-800 rounded-lg" onClick={() => setIsMobileMenuOpen(false)}>
+              <X size={16} className="text-zinc-400" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          <ProjectSelector
+            currentProject={currentProject}
+            onSelect={setCurrentProject}
+            projects={projects}
+            onCreate={handleCreateProject}
+            onDelete={deleteProject}
+          />
         </div>
       </div>
 
-      {/* 2. Main Content - Chat Interface (Central Focus) */}
-      <div className="flex-1 flex flex-col min-w-0 bg-neutral-950 relative">
+      {/* Main Content - Chat Interface */}
+      <div className="flex-1 flex flex-col min-w-0 bg-zinc-950 relative">
         {/* Header */}
-        <header className="flex items-center justify-between px-4 py-3 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur">
+        <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/50 bg-zinc-900/30 glass-subtle">
           <div className="flex items-center gap-3">
-             <button className="md:hidden text-neutral-400" onClick={() => setIsMobileMenuOpen(true)}>
-               <Menu size={20} />
-             </button>
-             <h1 className="font-medium text-neutral-100">
-               {currentProject ? currentProject.name : 'Select a Conversation'}
-             </h1>
-             {currentProject && (
-                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} title={isConnected ? "Connected" : "Disconnected"} />
-             )}
+            <button className="md:hidden p-1.5 hover:bg-zinc-800 rounded-lg text-zinc-400" onClick={() => setIsMobileMenuOpen(true)}>
+              <Menu size={18} />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <h1 className="font-medium text-zinc-100">
+                {currentProject ? currentProject.name : 'Select a Project'}
+              </h1>
+
+              {currentProject && (
+                <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${
+                  isConnected
+                    ? 'bg-emerald-500/10 text-emerald-400'
+                    : 'bg-red-500/10 text-red-400'
+                }`}>
+                  {isConnected ? <Wifi size={12} /> : <WifiOff size={12} />}
+                  <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+                </div>
+              )}
+            </div>
           </div>
-          
+
           {currentProject && (
             <div className="flex items-center gap-2">
-              <button 
+              {/* Live Activity Indicator */}
+              {lastActivity && (
+                <motion.div
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 text-xs"
+                >
+                  <Loader2 size={12} className="animate-spin" />
+                  <span className="max-w-48 truncate">{lastActivity}</span>
+                </motion.div>
+              )}
+
+              <button
                 onClick={toggleWorkspace}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${isWorkspaceOpen ? 'bg-blue-600/20 text-blue-400' : 'hover:bg-neutral-800 text-neutral-400'}`}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all ${
+                  isWorkspaceOpen
+                    ? 'bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/30'
+                    : 'hover:bg-zinc-800 text-zinc-400'
+                }`}
               >
                 <FolderKanban size={16} />
                 <span className="hidden sm:inline">Workspace</span>
               </button>
+
               <button
                 onClick={() => setIsTerminalVisible(!isTerminalVisible)}
-                className={`p-2 rounded-md transition-colors ${isTerminalVisible ? 'bg-neutral-800 text-neutral-100' : 'text-neutral-500 hover:text-neutral-300'}`}
+                className={`p-2 rounded-lg transition-all ${
+                  isTerminalVisible
+                    ? 'bg-zinc-800 text-zinc-100 ring-1 ring-zinc-700'
+                    : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
+                }`}
                 title="Toggle Terminal"
               >
                 <TerminalIcon size={16} />
+                {terminalEntries.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full" />
+                )}
               </button>
             </div>
           )}
         </header>
 
-        {/* Plan Visualizer (Top of Chat) */}
-        {currentPlan.length > 0 && (
-          <div className="border-b border-neutral-800">
-            <PlanVisualizer 
-              plan={currentPlan}
-              currentStepId={currentStepId}
-              validations={validations}
-              stepEvents={stepEvents}
-            />
-          </div>
-        )}
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-6">
-          {messages.map((msg, idx) => (
-            <motion.div 
-              key={idx}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className={`flex items-start gap-4 ${msg.role === 'agent' ? 'bg-neutral-900/50 -mx-4 px-4 py-4 border-y border-neutral-800/50' : 'max-w-3xl ml-auto'}`}
+        {/* Plan Visualizer */}
+        <AnimatePresence>
+          {currentPlan.length > 0 && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="border-b border-zinc-800/50 overflow-hidden"
             >
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${msg.role === 'agent' ? 'bg-blue-500/10 text-blue-400' : 'bg-neutral-800 text-neutral-400'}`}>
-                {msg.role === 'agent' ? <Bot size={18} /> : <User size={18} />}
-              </div>
-              
-              <div className="flex-1 min-w-0 space-y-2">
-                <div className="prose prose-invert prose-sm max-w-none">
-                  <ReactMarkdown 
-                    components={{
-                      code: ({node, inline, className, children, ...props}: any) => {
-                        const match = /language-(\w+)/.exec(className || '')
-                        return !inline && match ? (
-                          <div className="relative group">
-                            <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <span className="text-xs text-neutral-500 font-mono">{match[1]}</span>
-                            </div>
-                            <pre className="bg-neutral-950 rounded-lg p-3 overflow-x-auto border border-neutral-800">
-                              <code className={className} {...props}>
-                                {children}
-                              </code>
-                            </pre>
-                          </div>
-                        ) : (
-                          <code className="bg-neutral-800 rounded px-1 py-0.5 text-neutral-200" {...props}>
-                            {children}
-                          </code>
-                        )
-                      }
-                    }}
-                  >
-                    {msg.content}
-                  </ReactMarkdown>
-                </div>
-
-                {/* Tool Calls Display (Inline) */}
-                {msg.toolCalls && msg.toolCalls.map((tc, tcIdx) => (
-                  <div key={tcIdx} className="bg-neutral-900 border border-neutral-800 rounded-md overflow-hidden text-xs font-mono">
-                    <div className="px-3 py-2 bg-neutral-800/50 flex items-center justify-between border-b border-neutral-800">
-                      <div className="flex items-center gap-2">
-                        <TerminalIcon size={12} className="text-neutral-500" />
-                        <span className="text-neutral-300 font-semibold">{tc.tool}</span>
-                      </div>
-                      <span className={tc.status === 'done' ? (tc.success ? 'text-green-400' : 'text-red-400') : 'text-blue-400'}>
-                         {tc.status === 'done' ? (tc.success ? 'Success' : 'Failed') : 'Executing...'}
-                      </span>
-                    </div>
-                    {tc.output && (
-                      <div className="p-3 max-h-40 overflow-y-auto whitespace-pre-wrap text-neutral-400">
-                        {tc.output}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                
-                {msg.isError && (
-                  <div className="flex items-center gap-2 text-red-400 text-sm mt-2">
-                    <AlertCircle size={16} />
-                    <span>An error occurred processing this request.</span>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          ))}
-          
-          {isProcessing && (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex items-center gap-2 text-neutral-500 text-sm px-4"
-            >
-              <Loader2 size={16} className="animate-spin" />
-              <span>Agent is thinking...</span>
+              <PlanVisualizer
+                plan={currentPlan}
+                currentStepId={currentStepId}
+                validations={validations}
+                stepEvents={stepEvents}
+              />
             </motion.div>
           )}
-          
-          <div ref={messagesEndRef} />
+        </AnimatePresence>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-4xl mx-auto p-4 space-y-6">
+            {messages.length === 0 && !isProcessing && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex flex-col items-center justify-center py-20 text-center"
+              >
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-500/10 to-violet-500/10 mb-4">
+                  <Sparkles size={32} className="text-blue-400" />
+                </div>
+                <h2 className="text-xl font-medium text-zinc-200 mb-2">
+                  {currentProject ? 'Start a conversation' : 'Welcome to Agent Studio'}
+                </h2>
+                <p className="text-zinc-500 max-w-md">
+                  {currentProject
+                    ? 'Describe what you want to build and the agent will help you create it.'
+                    : 'Select or create a project to get started with your AI assistant.'}
+                </p>
+              </motion.div>
+            )}
+
+            {messages.map((msg, idx) => (
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`flex items-start gap-4 ${
+                  msg.role === 'user' ? 'flex-row-reverse' : ''
+                }`}
+              >
+                <div className={`shrink-0 p-2 rounded-xl ${
+                  msg.role === 'agent'
+                    ? 'bg-gradient-to-br from-blue-500/20 to-violet-500/20'
+                    : 'bg-zinc-800'
+                }`}>
+                  {msg.role === 'agent' ? (
+                    <Bot size={18} className="text-blue-400" />
+                  ) : (
+                    <User size={18} className="text-zinc-400" />
+                  )}
+                </div>
+
+                <div className={`flex-1 min-w-0 space-y-3 ${
+                  msg.role === 'user' ? 'text-right' : ''
+                }`}>
+                  <div className={`inline-block text-left ${
+                    msg.role === 'user'
+                      ? 'bg-blue-600/20 border border-blue-500/20 rounded-2xl rounded-tr-sm px-4 py-3'
+                      : 'bg-zinc-900/50 border border-zinc-800/50 rounded-2xl rounded-tl-sm px-4 py-3'
+                  }`}>
+                    <div className="prose prose-invert prose-sm max-w-none prose-custom">
+                      <ReactMarkdown
+                        components={{
+                          code: ({ node, inline, className, children, ...props }: any) => {
+                            const match = /language-(\w+)/.exec(className || '')
+                            return !inline && match ? (
+                              <div className="relative group my-3">
+                                <div className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <span className="text-[10px] text-zinc-500 font-mono uppercase">{match[1]}</span>
+                                </div>
+                                <pre className="bg-zinc-950 rounded-xl p-4 overflow-x-auto border border-zinc-800">
+                                  <code className={className} {...props}>
+                                    {children}
+                                  </code>
+                                </pre>
+                              </div>
+                            ) : (
+                              <code className="bg-zinc-800 rounded px-1.5 py-0.5 text-zinc-200 text-sm" {...props}>
+                                {children}
+                              </code>
+                            )
+                          }
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+
+                  {/* Tool Calls Display */}
+                  {msg.toolCalls && msg.toolCalls.length > 0 && (
+                    <div className="space-y-2 mt-3">
+                      {msg.toolCalls.map((tc, tcIdx) => (
+                        <motion.div
+                          key={tcIdx}
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden text-xs font-mono"
+                        >
+                          <div className="px-3 py-2 bg-zinc-800/50 flex items-center justify-between border-b border-zinc-800">
+                            <div className="flex items-center gap-2">
+                              <TerminalIcon size={12} className="text-zinc-500" />
+                              <span className="text-zinc-300 font-semibold">{tc.tool}</span>
+                            </div>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] ${
+                              tc.status === 'done'
+                                ? tc.success
+                                  ? 'bg-emerald-500/10 text-emerald-400'
+                                  : 'bg-red-500/10 text-red-400'
+                                : 'bg-blue-500/10 text-blue-400'
+                            }`}>
+                              {tc.status === 'done' ? (tc.success ? 'Success' : 'Failed') : 'Running...'}
+                            </span>
+                          </div>
+                          {tc.output && (
+                            <div className="p-3 max-h-40 overflow-y-auto whitespace-pre-wrap text-zinc-400 text-xs">
+                              {tc.output}
+                            </div>
+                          )}
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+
+                  {msg.isError && (
+                    <div className="flex items-center gap-2 text-red-400 text-sm mt-2">
+                      <AlertCircle size={14} />
+                      <span>An error occurred processing this request.</span>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            ))}
+
+            {/* Processing indicator */}
+            {isProcessing && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex items-start gap-4"
+              >
+                <div className="shrink-0 p-2 rounded-xl bg-gradient-to-br from-blue-500/20 to-violet-500/20">
+                  <Bot size={18} className="text-blue-400" />
+                </div>
+                <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl rounded-tl-sm px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex gap-1">
+                      <span className="w-2 h-2 bg-blue-400 rounded-full typing-dot" />
+                      <span className="w-2 h-2 bg-blue-400 rounded-full typing-dot" />
+                      <span className="w-2 h-2 bg-blue-400 rounded-full typing-dot" />
+                    </div>
+                    <span className="text-sm text-zinc-500">Agent is thinking...</span>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
         </div>
 
         {/* Input Area */}
-        <div className="p-4 bg-neutral-900 border-t border-neutral-800">
-          <div className="max-w-4xl mx-auto relative">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-              placeholder="Ask me anything..."
-              disabled={isProcessing || !isConnected}
-              className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-3 pr-12 text-neutral-200 placeholder-neutral-600 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
-            />
-            <button
-              onClick={sendMessage}
-              disabled={isProcessing || !isConnected || !input.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-blue-500 hover:text-blue-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <Send size={18} />
-            </button>
+        <div className="p-4 bg-zinc-900/50 border-t border-zinc-800/50 glass-subtle">
+          <div className="max-w-4xl mx-auto">
+            <div className="relative">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    sendMessage()
+                  }
+                }}
+                placeholder={isConnected ? "Ask me anything... (Shift+Enter for new line)" : "Connect to a project to start chatting"}
+                disabled={isProcessing || !isConnected}
+                rows={1}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 pr-12 text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 disabled:opacity-50 resize-none transition-all"
+                style={{ minHeight: '48px', maxHeight: '200px' }}
+              />
+              <button
+                onClick={sendMessage}
+                disabled={isProcessing || !isConnected || !input.trim()}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                <Send size={16} />
+              </button>
+            </div>
           </div>
         </div>
       </div>
-      
-      {/* 3. Right Sidebar - Collapsible Workspace (Explorer + Editor) */}
+
+      {/* Right Sidebar - Workspace */}
       <AnimatePresence>
         {isWorkspaceOpen && (
-           <motion.div 
-             initial={{ width: 0, opacity: 0 }}
-             animate={{ width: 450, opacity: 1 }} // Fixed width for workspace
-             exit={{ width: 0, opacity: 0 }}
-             transition={{ type: "spring", stiffness: 300, damping: 30 }}
-             className="border-l border-neutral-800 bg-neutral-900 flex flex-col shrink-0 overflow-hidden relative"
-           >
-              {/* Workspace Header & Fullscreen Toggle */}
-              <div className="flex items-center justify-between p-2 border-b border-neutral-800 bg-neutral-800/50">
-                <span className="text-xs font-medium text-neutral-400 px-2">WORKSPACE</span>
-                <div className="flex items-center gap-1">
-                   <button onClick={handleToggleFullscreen} className="p-1 hover:bg-neutral-700 rounded text-neutral-400" title="Fullscreen Editor">
-                     <FileCode size={14} />
-                   </button>
-                   <button onClick={toggleWorkspace} className="p-1 hover:bg-neutral-700 rounded text-neutral-400">
-                     <X size={14} />
-                   </button>
-                </div>
+          <motion.div
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 480, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="border-l border-zinc-800/50 bg-zinc-900/50 flex flex-col shrink-0 overflow-hidden"
+          >
+            {/* Workspace Header */}
+            <div className="flex items-center justify-between p-3 border-b border-zinc-800/50 bg-zinc-900/30">
+              <div className="flex items-center gap-2">
+                <FolderKanban size={14} className="text-zinc-500" />
+                <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Workspace</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={handleToggleFullscreen}
+                  className="p-1.5 hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-zinc-300 transition-colors"
+                  title="Fullscreen"
+                >
+                  <FileCode size={14} />
+                </button>
+                <button
+                  onClick={toggleWorkspace}
+                  className="p-1.5 hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-zinc-300 transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 flex flex-col min-h-0">
+              {/* File Explorer */}
+              <div className="h-1/3 border-b border-zinc-800/50 flex flex-col min-h-0">
+                <FileExplorer
+                  projectId={currentProject?.id || null}
+                  files={files}
+                  onRefresh={fetchFiles}
+                  onSelectFile={handleFileSelect}
+                />
               </div>
 
-             <div className="flex-1 flex flex-col min-h-0">
-               {/* File Explorer (Top Half) */}
-               <div className="h-1/3 border-b border-neutral-800 flex flex-col min-h-0">
-                 <FileExplorer 
-                   projectId={currentProject?.id || null}
-                   files={files}
-                   onRefresh={fetchFiles}
-                   onSelectFile={(file) => setSelectedFile(file.path)}
-                 />
-               </div>
-               
-               {/* Code Editor (Bottom Half) */}
-               <div className="flex-1 flex flex-col min-h-0">
-                 {selectedFile && currentProject ? (
-                   <CodeEditor 
-                     projectId={currentProject.id}
-                     filePath={selectedFile} 
-                     onClose={() => setSelectedFile(null)}
-                     readOnly={false}
-                     isFullscreen={isEditorFullscreen} 
-                     onToggleFullscreen={handleToggleFullscreen} 
-                   />
-                 ) : (
-                   <div className="flex-1 flex items-center justify-center text-neutral-600 text-sm">
-                     Select a file to edit
-                   </div>
-                 )}
-               </div>
-             </div>
-           </motion.div>
+              {/* File Viewer (Code Editor or PDF Viewer) */}
+              <div className="flex-1 flex flex-col min-h-0">
+                {renderFileViewer()}
+              </div>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Fullscreen Editor Overlay */}
+      {/* Fullscreen Viewer Overlay */}
       <AnimatePresence>
         {isEditorFullscreen && selectedFile && currentProject && (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="fixed inset-0 z-50 bg-neutral-950 flex flex-col"
+            className="fixed inset-0 z-50 bg-zinc-950 flex flex-col"
           >
-             <CodeEditor 
-               projectId={currentProject.id}
-               filePath={selectedFile} 
-               onClose={() => setIsEditorFullscreen(false)}
-               readOnly={false}
-               isFullscreen={true} 
-               onToggleFullscreen={handleToggleFullscreen} 
-             />
+            {renderFileViewer()}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Auto-Hiding Terminal Overlay */}
+      {/* Terminal Overlay */}
       <AnimatePresence>
         {isTerminalVisible && !isEditorFullscreen && (
           <motion.div
@@ -638,24 +843,29 @@ function App() {
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className="fixed bottom-0 left-64 right-0 z-40 bg-neutral-900 border-t border-neutral-800 shadow-2xl"
-            style={{ height: '30vh', right: isWorkspaceOpen ? '450px' : '0' }} // Adjust right based on workspace
+            className="fixed bottom-0 z-40 bg-zinc-900 border-t border-zinc-800/50 shadow-2xl"
+            style={{
+              left: '288px', // 72 * 4 = 288px (left sidebar width)
+              right: isWorkspaceOpen ? '480px' : '0',
+              height: '35vh'
+            }}
           >
-             <div className="flex items-center justify-between px-4 py-2 bg-neutral-800 border-b border-neutral-700 h-10">
-               <span className="text-xs font-medium text-neutral-400 flex items-center gap-2">
-                 <TerminalIcon size={12} />
-                 TERMINAL
-               </span>
-               <button 
-                 onClick={() => setIsTerminalVisible(false)}
-                 className="text-neutral-500 hover:text-neutral-300"
-               >
-                 <X size={14} />
-               </button>
-             </div>
-             <div className="h-[calc(30vh-40px)]">
-               <Terminal entries={terminalEntries} />
-             </div>
+            <div className="flex items-center justify-between px-4 py-2 bg-zinc-800/50 border-b border-zinc-800 h-10">
+              <div className="flex items-center gap-2 text-xs text-zinc-400">
+                <TerminalIcon size={12} />
+                <span className="font-medium uppercase tracking-wider">Terminal</span>
+                <span className="text-zinc-600">read-only</span>
+              </div>
+              <button
+                onClick={() => setIsTerminalVisible(false)}
+                className="p-1 hover:bg-zinc-700 rounded-lg text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                <ChevronDown size={14} />
+              </button>
+            </div>
+            <div className="h-[calc(35vh-40px)]">
+              <Terminal entries={terminalEntries} />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

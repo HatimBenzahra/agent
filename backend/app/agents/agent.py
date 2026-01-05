@@ -5,7 +5,7 @@ OrchestratorAgent - Main agent that creates plans and orchestrates sub-agents.
 import os
 import json
 import traceback
-from openai import OpenAI
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from typing import Callable, Optional, List, Dict, Any
 from dataclasses import dataclass
@@ -15,6 +15,7 @@ from app.agents.chat_history import chat_history_manager
 from app.agents.sub_agent import SubAgent, TaskDefinition, TaskResult
 from app.agents.validator import TaskValidator, ValidationResult
 from app.agents.context_manager import AdvancedContextManager
+from app.agents.session_pipeline import SessionPipeline
 
 load_dotenv()
 
@@ -51,34 +52,25 @@ Never introduce yourself, all u know is that u was created by hatim in 2026."""
 
 Each step should be:
 - Specific and actionable
-- Independent but may build on previous steps
-- Achievable using available tools (write_file, terminal, etc.)
-- Achievable using available tools (write_file, terminal, etc.)
-- PRINCIPLE 1 (Dependencies): If the task requires external libraries or tools, Step 1 MUST be to check/install them (e.g., 'pip install ...').
-- PRINCIPLE 2 (Context): If the task involves modifying existing files or code, Step 1 MUST be to READ those files.
-- PRINCIPLE 3 (Code): If the user provides code, Step 1 is always to SAVE it to a file.
+- Focused on the GOAL
+- Achievable using available tools
 
 Respond with a JSON array of steps:
 [
   {
     "id": "step_1",
-    "objective": "Create main.py with basic structure",
-    "context": "Use the code provided by the user if available"
+    "objective": "Research/Check prerequisites",
+    "context": "Gather info before acting"
   },
   {
     "id": "step_2", 
-    "objective": "Test the script by running it",
-    "context": "After step_1 creates the file"
+    "objective": "Execute core task",
+    "context": "Use findings from step 1"
   }
 ]
 
-Keep it CONCISE. Maximum 5-7 steps. Be practical.
-
-IMPORTANT:
-- If the user provides a script (Python, JS, etc.), YOU MUST Plan to:
-  1. Write the file (e.g. 'write_file main.py')
-  2. Execute the file (e.g. 'terminal python main.py')
-- Do NOT assume the file exists. Always write it first."""
+Keep it CONCISE. Maximum 5-7 steps.
+"""
 
     def __init__(self, project_id: Optional[str] = None):
         self.api_key = os.getenv("OPENROUTER_API_KEY")
@@ -90,7 +82,7 @@ IMPORTANT:
         if not self.api_key:
             raise ValueError("OPENROUTER_API_KEY not found in environment variables.")
 
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=self.api_key,
             default_headers={
@@ -113,6 +105,9 @@ IMPORTANT:
         
         # Current execution plan
         self.current_plan: List[PlanStep] = []
+        
+        # Session pipeline for complete context tracking
+        self.pipeline: Optional[SessionPipeline] = None
 
     def set_project(self, project_id: str):
         """Set the current project and initialize its sandbox."""
@@ -122,6 +117,8 @@ IMPORTANT:
         self.validator = TaskValidator(self.client, self.model)
         # Load chat history for this project
         self.messages = chat_history_manager.load(project_id)
+        # Initialize session pipeline
+        self.pipeline = SessionPipeline(project_id, str(self.sandbox.workspace_path))
 
     async def run(
         self,
@@ -143,12 +140,16 @@ IMPORTANT:
 
         # Add user message to history
         self.messages.append({"role": "user", "content": user_input})
+        
+        # Log to pipeline
+        if self.pipeline:
+            self.pipeline.add_event("user_message", content=user_input)
 
         try:
             # 0. Retrieve Context (The "Brain" Upgrade)
             # Find relevant files and history dynamically
             context_mgr = AdvancedContextManager(self.client, self.model, self.sandbox, self.project_id) if self.project_id else None
-            retrieved_context = await context_mgr.retrieve_context(user_input) if context_mgr else None
+            retrieved_context = await context_mgr.retrieve_context(user_input, self.messages, self.pipeline) if context_mgr else None
             
             # Augment user input with retrieved context for the agent's internal reasoning
             augmented_input = user_input
@@ -173,7 +174,7 @@ IMPORTANT:
                     {"role": "user", "content": augmented_input} # Augmented current message
                 ]
                 
-                response = self.client.chat.completions.create(
+                response = await self.client.chat.completions.create(
                     model=self.model,
                     messages=messages_with_context
                 )
@@ -188,6 +189,13 @@ IMPORTANT:
                 "role": "assistant",
                 "content": final_content
             })
+            
+            # Log assistant response to pipeline
+            if self.pipeline:
+                self.pipeline.add_event(
+                    "assistant_response",
+                    content=final_content[:200]  # Truncate for storage
+                )
 
             # Save chat history
             if self.project_id:
@@ -241,7 +249,7 @@ C) CLARIFICATION (Ambiguity)
 Reply with ONLY 'A', 'B', or 'C'.
 """
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -273,6 +281,13 @@ Reply with ONLY 'A', 'B', or 'C'.
         
         plan = await self._generate_plan(user_input)
         self.current_plan = plan
+        
+        # Log plan to pipeline
+        if self.pipeline:
+            self.pipeline.add_event(
+                "plan_generated",
+                plan=[{"id": s.id, "objective": s.objective} for s in plan]
+            )
         
         if callback:
             await callback({
@@ -310,7 +325,7 @@ Reply with ONLY 'A', 'B', or 'C'.
                 context=full_context
             )
             
-            sub_agent = SubAgent(task_def, self.tools, self.client, self.model)
+            sub_agent = SubAgent(task_def, self.tools, self.client, self.model, self.pipeline)
             task_result = await sub_agent.execute(callback)
             
             # Validate result
@@ -334,6 +349,20 @@ Reply with ONLY 'A', 'B', or 'C'.
                 step.status = "completed"
                 results.append(f"✓ {step.objective}: {task_result.output[:100]}")
                 
+                # Log successful step to pipeline
+                if self.pipeline:
+                    for file_path in task_result.files_created:
+                        self.pipeline.add_event("file_created", path=file_path, step_id=step.id)
+                    for file_path in task_result.files_modified:
+                        self.pipeline.add_event("file_modified", path=file_path, step_id=step.id)
+                    self.pipeline.add_event(
+                        "validation",
+                        step_id=step.id,
+                        success=True,
+                        confidence=validation.confidence,
+                        feedback=validation.feedback
+                    )
+                
                 if callback:
                     await callback({
                         "type": "step_completed",
@@ -343,6 +372,16 @@ Reply with ONLY 'A', 'B', or 'C'.
             else:
                 step.status = "failed"
                 results.append(f"✗ {step.objective}: {validation.feedback}")
+                
+                # Log failed step to pipeline
+                if self.pipeline:
+                    self.pipeline.add_event(
+                        "validation",
+                        step_id=step.id,
+                        success=False,
+                        confidence=validation.confidence,
+                        feedback=validation.feedback
+                    )
                 
                 if callback:
                     await callback({
@@ -368,9 +407,11 @@ Reply with ONLY 'A', 'B', or 'C'.
         if not self.project_id or not self.current_plan:
             return
             
-        # Determine path (e.g., inside .agent directory if possible, or project root)
-        # Using a hidden file in project root for simplicity now
-        plan_path = os.path.join(self.project_id, ".active_plan.json")
+        if not self.sandbox:
+            return
+
+        # Save to project workspace
+        plan_path = os.path.join(self.sandbox.workspace_path, ".active_plan.json")
         
         try:
             state = {
@@ -393,7 +434,9 @@ Reply with ONLY 'A', 'B', or 'C'.
         """Delete specific plan state file after completion."""
         if not self.project_id:
             return
-        plan_path = os.path.join(self.project_id, ".active_plan.json")
+        if not self.sandbox:
+            return
+        plan_path = os.path.join(self.sandbox.workspace_path, ".active_plan.json")
         if os.path.exists(plan_path):
             try:
                 os.remove(plan_path)
@@ -403,7 +446,7 @@ Reply with ONLY 'A', 'B', or 'C'.
     async def _generate_plan(self, user_input: str) -> List[PlanStep]:
         """Generate a structured execution plan."""
         
-        response = self.client.chat.completions.create(
+        response = await self.client.chat.completions.create(
             model=self.model,
             messages=[
                 {"role": "system", "content": self.PLANNER_PROMPT},

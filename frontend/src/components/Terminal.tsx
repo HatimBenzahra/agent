@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { TerminalIcon } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { Terminal as TerminalIcon } from 'lucide-react'
 
-type TerminalEntry = {
+export type TerminalEntry = {
   type: 'command' | 'output' | 'error'
   content: string
   timestamp: Date
@@ -22,48 +23,46 @@ export function Terminal({ entries }: TerminalProps) {
   }, [entries])
 
   return (
-    <div className="flex flex-col h-full bg-neutral-950 font-mono text-xs">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-neutral-900 border-b border-neutral-800">
-        <TerminalIcon size={14} className="text-neutral-500" />
-        <span className="text-neutral-400 text-xs">Agent Terminal</span>
-        <span className="ml-auto text-[10px] text-neutral-600">read-only</span>
-      </div>
-
-      {/* Output - Read Only */}
+    <div className="flex flex-col h-full bg-zinc-950 font-mono text-xs">
+      {/* Output */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-y-auto p-3 space-y-2"
+        className="flex-1 overflow-y-auto p-4 space-y-3"
       >
         {entries.length === 0 ? (
-          <div className="text-neutral-600 text-center py-8">
-            The agent's terminal activity will appear here.
+          <div className="flex flex-col items-center justify-center h-full text-center">
+            <TerminalIcon size={28} className="text-zinc-800 mb-2" />
+            <p className="text-zinc-600 text-xs">Terminal output will appear here</p>
           </div>
         ) : (
           entries.map((entry, idx) => (
-            <div key={idx} className="space-y-0.5">
+            <motion.div
+              key={idx}
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.15 }}
+              className="space-y-1"
+            >
               {entry.type === 'command' && (
-                <div className="flex items-center gap-2">
-                  <span className="text-green-500">$</span>
-                  <span className="text-blue-400">{entry.content}</span>
+                <div className="flex items-start gap-2">
+                  <span className="text-emerald-500 select-none">$</span>
+                  <span className="text-blue-400 break-all">{entry.content}</span>
                 </div>
               )}
               {entry.type === 'output' && (
-                <pre className="text-neutral-300 whitespace-pre-wrap pl-4">
+                <pre className="text-zinc-400 whitespace-pre-wrap pl-4 leading-relaxed break-all">
                   {entry.content}
                 </pre>
               )}
               {entry.type === 'error' && (
-                <pre className="text-red-400 whitespace-pre-wrap pl-4">
+                <pre className="text-red-400 whitespace-pre-wrap pl-4 leading-relaxed break-all">
                   {entry.content}
                 </pre>
               )}
-            </div>
+            </motion.div>
           ))
         )}
       </div>
     </div>
   )
 }
-
-export type { TerminalEntry }
