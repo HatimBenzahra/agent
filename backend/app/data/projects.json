@@ -60,47 +60,95 @@
     "name": "hello",
     "description": "",
     "created_at": "2026-01-05T06:18:55.845418",
-    "updated_at": "2026-01-05T06:18:55.845418",
-    "status": "active"
+    "updated_at": "2026-01-05T09:47:56.694793",
+    "status": "deleted"
   },
   "6f32f16c": {
     "id": "6f32f16c",
     "name": "test",
     "description": "",
     "created_at": "2026-01-05T06:59:38.190302",
-    "updated_at": "2026-01-05T06:59:38.190302",
-    "status": "active"
+    "updated_at": "2026-01-05T09:47:58.755109",
+    "status": "deleted"
   },
   "5d2a62f5": {
     "id": "5d2a62f5",
     "name": "testt",
     "description": "",
     "created_at": "2026-01-05T07:10:30.034626",
-    "updated_at": "2026-01-05T07:10:30.034626",
-    "status": "active"
+    "updated_at": "2026-01-05T09:48:08.699357",
+    "status": "deleted"
   },
   "ec5aedb3": {
     "id": "ec5aedb3",
     "name": "tt",
     "description": "",
     "created_at": "2026-01-05T07:17:43.525530",
-    "updated_at": "2026-01-05T07:17:43.525530",
-    "status": "active"
+    "updated_at": "2026-01-05T09:48:21.069407",
+    "status": "deleted"
   },
   "e7f581fd": {
     "id": "e7f581fd",
     "name": "ss",
     "description": "",
     "created_at": "2026-01-05T07:28:43.950685",
-    "updated_at": "2026-01-05T07:28:43.950685",
-    "status": "active"
+    "updated_at": "2026-01-05T09:48:18.246266",
+    "status": "deleted"
   },
   "ca7310ed": {
     "id": "ca7310ed",
     "name": "dddd",
     "description": "",
     "created_at": "2026-01-05T07:38:07.979526",
-    "updated_at": "2026-01-05T07:38:07.979526",
+    "updated_at": "2026-01-05T09:48:15.102082",
+    "status": "deleted"
+  },
+  "dc266ea6": {
+    "id": "dc266ea6",
+    "name": "hh",
+    "description": "",
+    "created_at": "2026-01-05T07:57:43.849298",
+    "updated_at": "2026-01-05T09:47:54.362860",
+    "status": "deleted"
+  },
+  "b62a204c": {
+    "id": "b62a204c",
+    "name": "jj",
+    "description": "",
+    "created_at": "2026-01-05T08:06:48.489288",
+    "updated_at": "2026-01-05T09:47:51.884965",
+    "status": "deleted"
+  },
+  "40f7262e": {
+    "id": "40f7262e",
+    "name": "hh",
+    "description": "",
+    "created_at": "2026-01-05T08:26:31.592787",
+    "updated_at": "2026-01-05T09:47:46.540803",
+    "status": "deleted"
+  },
+  "c34dbb19": {
+    "id": "c34dbb19",
+    "name": "ss",
+    "description": "",
+    "created_at": "2026-01-05T08:54:02.086592",
+    "updated_at": "2026-01-05T09:47:20.679924",
+    "status": "deleted"
+  },
+  "16ba9684": {
+    "id": "16ba9684",
+    "name": "zz",
+    "description": "",
+    "created_at": "2026-01-05T09:47:09.096652",
+    "updated_at": "2026-01-05T09:47:20.694592",
+    "status": "deleted"
+  },
+  "5d119ce5": {
+    "id": "5d119ce5",
+    "name": "dodo",
+    "description": "",
+    "created_at": "2026-01-05T09:47:41.087901",
+    "updated_at": "2026-01-05T09:47:41.087901",
     "status": "active"
   }
 }

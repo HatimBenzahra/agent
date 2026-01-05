@@ -14,6 +14,7 @@ from app.tools.registry import ToolRegistry, ToolResult
 from app.agents.chat_history import chat_history_manager
 from app.agents.sub_agent import SubAgent, TaskDefinition, TaskResult
 from app.agents.validator import TaskValidator, ValidationResult
+from app.agents.context_manager import AdvancedContextManager
 
 load_dotenv()
 
@@ -52,7 +53,10 @@ Each step should be:
 - Specific and actionable
 - Independent but may build on previous steps
 - Achievable using available tools (write_file, terminal, etc.)
-- If the user provides code, Step 1 MUST be to write that code to a file, and Step 2 to execute it.
+- Achievable using available tools (write_file, terminal, etc.)
+- PRINCIPLE 1 (Dependencies): If the task requires external libraries or tools, Step 1 MUST be to check/install them (e.g., 'pip install ...').
+- PRINCIPLE 2 (Context): If the task involves modifying existing files or code, Step 1 MUST be to READ those files.
+- PRINCIPLE 3 (Code): If the user provides code, Step 1 is always to SAVE it to a file.
 
 Respond with a JSON array of steps:
 [
@@ -141,22 +145,43 @@ IMPORTANT:
         self.messages.append({"role": "user", "content": user_input})
 
         try:
-            # 1. Check if this needs a plan or is just a simple query
-            needs_execution = await self._needs_execution(user_input)
+            # 0. Retrieve Context (The "Brain" Upgrade)
+            # Find relevant files and history dynamically
+            context_mgr = AdvancedContextManager(self.client, self.model, self.sandbox, self.project_id) if self.project_id else None
+            retrieved_context = await context_mgr.retrieve_context(user_input) if context_mgr else None
             
-            if not needs_execution:
+            # Augment user input with retrieved context for the agent's internal reasoning
+            augmented_input = user_input
+            if retrieved_context and retrieved_context.files:
+                augmented_input += "\n\n[CONTEXT RETRIEVED FROM FILES]\n"
+                for f in retrieved_context.files:
+                    augmented_input += f"--- {f['path']} ---\n{f['content']}\n"
+            
+            # 1. Check if this needs a plan or is just a simple query
+            # Pass the augmented input so it "knows" about the files
+            intent = await self._needs_execution(augmented_input)
+            
+            if intent == "CLARIFY":
+                # Ask user for clarification
+                final_content = "Do you want me to just **show you the code** (Chat) or **implement it** in the workspace (Execute)? Reply with 'Show' or 'Implement'."
+            elif intent == "RESPOND":
                 # Simple query - respond directly
+                # We inject context into system prompt or just append to messages temporarily
+                messages_with_context = [
+                    {"role": "system", "content": self.SYSTEM_PROMPT},
+                    *self.messages[:-1], # History
+                    {"role": "user", "content": augmented_input} # Augmented current message
+                ]
+                
                 response = self.client.chat.completions.create(
                     model=self.model,
-                    messages=[
-                        {"role": "system", "content": self.SYSTEM_PROMPT},
-                        *self.messages
-                    ]
+                    messages=messages_with_context
                 )
                 final_content = response.choices[0].message.content
-            else:
+            else: # EXECUTE
                 # Complex task - use multi-agent workflow
-                final_content = await self._execute_multi_agent_workflow(user_input, callback)
+                # The planner will now see the file content in 'augmented_input'
+                final_content = await self._execute_multi_agent_workflow(augmented_input, callback)
 
             # Add final response to history
             self.messages.append({
@@ -180,22 +205,40 @@ IMPORTANT:
             
             return error_msg
 
-    async def _needs_execution(self, user_input: str) -> bool:
+    async def _needs_execution(self, user_input: str) -> str:
         """
         Use LLM to decide if the request needs a plan or is just immediate conversation.
-        This implements the 'Analyze First' requirement.
         """
-        prompt = f"""Analyze this user request:
+        # Get recent history (last 2 messages before the current one) to understand context
+        # self.messages already includes the current user message at the end
+        recent_history = self.messages[-5:-1] if len(self.messages) > 1 else []
+        history_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in recent_history])
+
+        prompt = f"""Analyze the user's INTENT based on the conversation context.
+
+RECENT CONVERSATION:
+{history_text}
+
+CURRENT USER REQUEST:
 "{user_input}"
 
-Does this request require:
-A) IMMEDIATE RESPONSE (simple questions, explanations, greetings, translations, standard chat)
-B) EXECUTION PLAN (writing code, creating files, running commands, multi-step tasks, fixing bugs)
+Classify the user's intent into one of these 3 categories:
 
-If the user provides code and asks to "run" or "test" or "implement" it, choose B.
-If the user asks to create a file or PDF, choose B.
+A) IMMEDIATE RESPONSE (Chat / Explanation / Refusal)
+- User wants to chat, ask a question, get an explanation, or see code WITHOUT execution.
+- User replies "Show", "Display", "Just text", "Non", "Don't run" to a clarification question ou bien tu comprends d'apres la phrase que l utilisateur veut une simple reponse.
+- User greeting or simple query.
 
-Reply with ONLY 'A' or 'B'.
+B) EXECUTION (Implementation / Action / Confirmation)
+- User wants to APPLY changes, CREATE files, RUN code, FIX bugs.
+- User replies "Yes", "Do it", "Implement", "Go ahead", "Vas-y", "Fais-le" to a clarification question tu dois comprendre si c'est yes d'apres la phrase.
+- User explicitly asks to "execute", "write file", "test".
+
+C) CLARIFICATION (Ambiguity)
+- The request is vague (e.g., "python script") AND there is NO prior context to clarify it.
+- If the user is ANSWERING a previous clarification question, DO NOT choose C. Choose A or B based on their answer.
+
+Reply with ONLY 'A', 'B', or 'C'.
 """
         try:
             response = self.client.chat.completions.create(
@@ -203,11 +246,19 @@ Reply with ONLY 'A' or 'B'.
                 messages=[{"role": "user", "content": prompt}]
             )
             decision = response.choices[0].message.content.strip().upper()
-            return "B" in decision
+            
+            if "C" in decision:
+                return "CLARIFY"
+            elif "B" in decision:
+                return "EXECUTE"
+            else:
+                return "RESPOND"
         except:
             # Fallback to keyword heuristics if LLM fails
             action_keywords = ["crée", "exécute", "lance", "write", "run", "code"]
-            return any(k in user_input.lower() for k in action_keywords)
+            if any(k in user_input.lower() for k in action_keywords):
+                return "EXECUTE"
+            return "RESPOND"
 
     async def _execute_multi_agent_workflow(
         self,
@@ -232,8 +283,12 @@ Reply with ONLY 'A' or 'B'.
         # Step 2: Execute plan sequentially with validation
         results = []
         
+        # Save initial plan state
+        self._save_plan_state()
+        
         for i, step in enumerate(plan):
             step.status = "executing"
+            self._save_plan_state() # Save executing status
             
             if callback:
                 await callback({
@@ -244,10 +299,15 @@ Reply with ONLY 'A' or 'B'.
                 })
             
             # Create and execute sub-agent
+            # CRITICAL: Inject the original user_input (Global Goal) into context
+            # so the SubAgent knows WHAT content to generate (e.g. "PDF about AI Agents")
+            # and doesn't just produce generic output.
+            full_context = f"GLOBAL GOAL: {user_input}\n\nSTEP CONTEXT: {step.context}\n\nPrevious results:\n" + "\n".join(results[-2:])
+            
             task_def = TaskDefinition(
                 id=step.id,
                 objective=step.objective,
-                context=step.context + "\n\nPrevious results:\n" + "\n".join(results[-2:])
+                context=full_context
             )
             
             sub_agent = SubAgent(task_def, self.tools, self.client, self.model)
@@ -292,10 +352,53 @@ Reply with ONLY 'A' or 'B'.
                     })
                 
                 # For now, continue despite failure (future: retry logic)
+            
+            # Save updated status after step
+            self._save_plan_state()
+        
+        # Clear plan state on completion
+        self._clear_plan_state()
         
         # Step 3: Generate final summary
         summary = "Task completed. Results:\n" + "\n".join(results)
         return summary
+
+    def _save_plan_state(self):
+        """Save the current plan state to file for resumption."""
+        if not self.project_id or not self.current_plan:
+            return
+            
+        # Determine path (e.g., inside .agent directory if possible, or project root)
+        # Using a hidden file in project root for simplicity now
+        plan_path = os.path.join(self.project_id, ".active_plan.json")
+        
+        try:
+            state = {
+                "plan": [
+                    {
+                        "id": s.id, 
+                        "objective": s.objective, 
+                        "context": s.context, 
+                        "status": s.status
+                    } for s in self.current_plan
+                ],
+                "last_status": "in_progress"
+            }
+            with open(plan_path, "w") as f:
+                json.dump(state, f, indent=2)
+        except Exception as e:
+            print(f"Failed to save plan state: {e}")
+
+    def _clear_plan_state(self):
+        """Delete specific plan state file after completion."""
+        if not self.project_id:
+            return
+        plan_path = os.path.join(self.project_id, ".active_plan.json")
+        if os.path.exists(plan_path):
+            try:
+                os.remove(plan_path)
+            except:
+                pass
 
     async def _generate_plan(self, user_input: str) -> List[PlanStep]:
         """Generate a structured execution plan."""

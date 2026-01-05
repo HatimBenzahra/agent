@@ -190,17 +190,40 @@ function App() {
           fetchFiles() // Refresh files list
         }
       } else if (data.type === 'sub_agent_tool') {
-        // Track granular tool events for plan visualization
+        const args = data.arguments || {}
+        
+        // 1. Update Terminal (Real-time)
+        if (data.tool === 'terminal' && args.command) {
+          // Add command entry
+          setTerminalEntries(prev => [...prev, {
+            type: 'command',
+            content: args.command,
+            timestamp: new Date()
+          }])
+          
+          // Add output entry if present
+          if (data.output) {
+             setTerminalEntries(prev => [...prev, {
+               type: data.success ? 'output' : 'error',
+               content: data.output,
+               timestamp: new Date()
+             }])
+          }
+        }
+
+        // 2. Update Files (Real-time)
+        if (['write_file', 'delete_file'].includes(data.tool) && data.success) {
+          fetchFiles() 
+        }
+
+        // 3. Update Plan Visualizer
         if (data.task_id && data.tool) {
           let message = `Using tool: ${data.tool}`
-          
-          // Helper to get args safely
-          const args = data.arguments || {}
           
           if (data.tool === 'terminal') {
             message = `Executing: ${args.command || 'script'}`
           } else if (data.tool === 'write_file') {
-            message = `Writing file: ${args.path || 'unknown'}`
+            message = `Writing file: ${args.target_file || args.path || 'unknown'}`
           } else if (data.tool === 'read_file') {
             message = `Reading file: ${args.path || 'unknown'}`
           } else if (data.tool === 'list_files') {
@@ -217,14 +240,12 @@ function App() {
 
           setStepEvents(prev => {
             const current = prev[data.task_id] || []
-            // Avoid adding duplicates if timestamps are very close
             const exists = current.some(e => 
               e.tool === data.tool && 
               e.message === message && 
               Math.abs(e.timestamp - newEvent.timestamp) < 100
             )
             if (exists) return prev
-
             return { ...prev, [data.task_id]: [...current, newEvent] }
           })
         }

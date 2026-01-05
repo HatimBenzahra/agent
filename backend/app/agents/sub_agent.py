@@ -79,10 +79,17 @@ EXAMPLE:
 
 Start by using a tool immediately.
 
+ERROR RECOVERY:
+- If a command fails (e.g., 'command not found', 'import error'), YOU MUST FIX IT.
+- Example: If 'pip: command not found', try 'pip3' or 'python -m pip'.
+- Example: If 'ModuleNotFoundError', install the module using 'pip install ...'.
+- DO NOT GIVE UP on the first error. Try at least 2 different solutions.
+
 CHECKLIST BEFORE ANSWERING:
 - Did I write the file? (Use write_file)
 - Did I run the code? (Use terminal)
 - Did I see the output?
+- If it failed, did I try to fix it?
 - If I am just talking, I AM FAILING. I MUST ACT."""
 
         messages = [
@@ -92,7 +99,7 @@ CHECKLIST BEFORE ANSWERING:
         
         try:
             # Loop until no more tool calls
-            max_iterations = 10
+            max_iterations = 15
             iteration = 0
             
             while iteration < max_iterations:
@@ -202,8 +209,9 @@ CHECKLIST BEFORE ANSWERING:
                 "type": "sub_agent_tool",
                 "task_id": self.task.id,
                 "tool": tool_name,
+                "arguments": args,
                 "success": result.success,
-                "output": result.output[:200] if result.output else ""
+                "output": result.output[:500] if result.output else ""
             })
         
         return result.output or ("Success" if result.success else f"Error: {result.output}")

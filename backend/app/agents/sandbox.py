@@ -50,7 +50,7 @@ class Sandbox:
         'mkdir', 'touch', 'cp', 'mv', 'rm',
         'echo', 'pwd', 'which', 'env',
         'git', 'curl', 'wget',
-        'cd',
+        'cd', 'pwd',
         'g++', 'gcc', 'make', 'cmake', 'cc', 'c++', 'clang', 'clang++',  # Handled specially
     }
 
