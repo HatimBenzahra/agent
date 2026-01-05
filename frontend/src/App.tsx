@@ -1,12 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Loader2, AlertCircle, Terminal as TerminalIcon, FolderKanban } from 'lucide-react'
+import { Send, Bot, User, Loader2, AlertCircle, Terminal as TerminalIcon, FolderKanban, Menu, X, FileCode } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import { Terminal } from './components/Terminal'
 import type { TerminalEntry } from './components/Terminal'
 import { FileExplorer } from './components/FileExplorer'
+import type { FileInfo } from './components/FileExplorer'
 import { ProjectSelector } from './components/ProjectSelector'
 import { CodeEditor } from './components/CodeEditor'
+import { PlanVisualizer } from './components/PlanVisualizer'
+import type { StepEvent } from './components/PlanVisualizer'
 
 // Types
 type Project = {
@@ -16,14 +19,6 @@ type Project = {
   created_at: string
   updated_at: string
   status: string
-}
-
-type FileInfo = {
-  name: string
-  path: string
-  is_dir: boolean
-  size: number
-  modified: string
 }
 
 type ToolCall = {
@@ -40,8 +35,6 @@ type Message = {
   toolCalls?: ToolCall[]
   isError?: boolean
 }
-
-type RightPanel = 'terminal' | 'files' | null
 
 const API_BASE = 'http://localhost:8000'
 
@@ -60,10 +53,21 @@ function App() {
   // Terminal state - populated by agent's tool calls
   const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([])
 
+  // Multi-agent plan state
+  const [currentPlan, setCurrentPlan] = useState<any[]>([])
+  const [currentStepId, setCurrentStepId] = useState<string | undefined>()
+  const [validations, setValidations] = useState<Record<string, any>>({})
+  const [stepEvents, setStepEvents] = useState<Record<string, StepEvent[]>>({})
+
   // UI state
-  const [rightPanel, setRightPanel] = useState<RightPanel>('terminal')
   const [isConnected, setIsConnected] = useState(false)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  
+  // Responsive & Layout state
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isEditorFullscreen, setIsEditorFullscreen] = useState(false)
+  const [isTerminalVisible, setIsTerminalVisible] = useState(false)
+  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false)
 
   const ws = useRef<WebSocket | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -72,6 +76,20 @@ function App() {
   useEffect(() => {
     fetchProjects()
   }, [])
+
+  // Auto-hide/show terminal logic
+  useEffect(() => {
+    if (terminalEntries.length > 0) {
+      setIsTerminalVisible(true)
+    }
+  }, [terminalEntries])
+
+  // Auto-open workspace when file selected
+  useEffect(() => {
+    if (selectedFile) {
+      setIsWorkspaceOpen(true)
+    }
+  }, [selectedFile])
 
   // Connect to WebSocket when project changes
   useEffect(() => {
@@ -89,6 +107,9 @@ function App() {
     setMessages([])
     setCurrentToolCalls([])
     setTerminalEntries([])
+    setCurrentPlan([])
+    setValidations({})
+    setStepEvents({})
 
     // Connect to project chat
     const socket = new WebSocket(`ws://localhost:8000/ws/chat/${currentProject.id}`)
@@ -107,15 +128,40 @@ function App() {
 
       if (data.type === 'status') {
         // Status update (thinking, etc.)
+      } else if (data.type === 'plan_created') {
+        setCurrentPlan(data.plan || [])
+        setValidations({})
+        setStepEvents({})
+      } else if (data.type === 'step_started') {
+        setCurrentStepId(data.step_id)
+        setCurrentPlan(prev => prev.map(step => 
+          step.id === data.step_id ? { ...step, status: 'executing' } : step
+        ))
+      } else if (data.type === 'step_validating') {
+        setCurrentPlan(prev => prev.map(step => 
+          step.id === data.step_id ? { ...step, status: 'validating' } : step
+        ))
+      } else if (data.type === 'step_completed') {
+        setCurrentPlan(prev => prev.map(step => 
+          step.id === data.step_id ? { ...step, status: 'completed' } : step
+        ))
+        if (data.validation) {
+          setValidations(prev => ({ ...prev, [data.step_id]: data.validation }))
+        }
+      } else if (data.type === 'step_failed') {
+        setCurrentPlan(prev => prev.map(step => 
+          step.id === data.step_id ? { ...step, status: 'failed' } : step
+        ))
+        if (data.validation) {
+          setValidations(prev => ({ ...prev, [data.step_id]: data.validation }))
+        }
       } else if (data.type === 'tool_call') {
-        // Tool is being executed
         setCurrentToolCalls(prev => [...prev, {
           tool: data.tool,
           arguments: data.arguments,
           status: 'executing'
         }])
 
-        // If it's a terminal command, add to terminal entries
         if (data.tool === 'terminal' && data.arguments?.command) {
           setTerminalEntries(prev => [...prev, {
             type: 'command',
@@ -124,7 +170,6 @@ function App() {
           }])
         }
       } else if (data.type === 'tool_result') {
-        // Tool finished
         setCurrentToolCalls(prev =>
           prev.map((tc, idx) =>
             idx === prev.length - 1
@@ -133,7 +178,6 @@ function App() {
           )
         )
 
-        // If it was a terminal command, add output to terminal
         if (data.tool === 'terminal' && data.output) {
           setTerminalEntries(prev => [...prev, {
             type: data.success ? 'output' : 'error',
@@ -142,12 +186,49 @@ function App() {
           }])
         }
 
-        // If it was a file operation, refresh files
         if (['write_file', 'delete_file'].includes(data.tool)) {
-          fetchFiles()
+          fetchFiles() // Refresh files list
+        }
+      } else if (data.type === 'sub_agent_tool') {
+        // Track granular tool events for plan visualization
+        if (data.task_id && data.tool) {
+          let message = `Using tool: ${data.tool}`
+          
+          // Helper to get args safely
+          const args = data.arguments || {}
+          
+          if (data.tool === 'terminal') {
+            message = `Executing: ${args.command || 'script'}`
+          } else if (data.tool === 'write_file') {
+            message = `Writing file: ${args.path || 'unknown'}`
+          } else if (data.tool === 'read_file') {
+            message = `Reading file: ${args.path || 'unknown'}`
+          } else if (data.tool === 'list_files') {
+            message = `Listing files in: ${args.path || '.'}`
+          }
+
+          const newEvent: StepEvent = {
+            type: 'tool',
+            tool: data.tool,
+            message: message,
+            status: data.success ? 'success' : 'error',
+            timestamp: Date.now()
+          }
+
+          setStepEvents(prev => {
+            const current = prev[data.task_id] || []
+            // Avoid adding duplicates if timestamps are very close
+            const exists = current.some(e => 
+              e.tool === data.tool && 
+              e.message === message && 
+              Math.abs(e.timestamp - newEvent.timestamp) < 100
+            )
+            if (exists) return prev
+
+            return { ...prev, [data.task_id]: [...current, newEvent] }
+          })
         }
       } else if (data.type === 'result') {
-        // Final response
         setMessages(prev => [...prev, {
           role: 'agent',
           content: data.content,
@@ -169,7 +250,6 @@ function App() {
       }
     }
 
-    // Fetch files for the project
     fetchFiles()
     fetchChatHistory()
 
@@ -213,11 +293,10 @@ function App() {
     try {
       const res = await fetch(`${API_BASE}/api/projects/${currentProject.id}/chat/history`)
       const data = await res.json()
-      // Convert backend message format to frontend format
       const formattedMessages = (data.messages || []).map((msg: any) => ({
         role: msg.role === 'user' ? 'user' : 'agent',
         content: msg.content,
-        toolCalls: undefined, // Tool calls are not persisted
+        toolCalls: undefined,
         isError: false
       }))
       setMessages(formattedMessages)
@@ -227,7 +306,7 @@ function App() {
     }
   }
 
-  const createProject = async (name: string, description: string) => {
+  const handleCreateProject = async (name: string, description: string) => {
     try {
       const res = await fetch(`${API_BASE}/api/projects`, {
         method: 'POST',
@@ -263,239 +342,299 @@ function App() {
     ws.current?.send(msg)
   }
 
+  const handleToggleFullscreen = () => {
+    setIsEditorFullscreen(!isEditorFullscreen)
+  }
+
+  const toggleWorkspace = () => {
+    setIsWorkspaceOpen(!isWorkspaceOpen)
+  }
+
   return (
-    <div className="flex h-screen bg-neutral-950 text-neutral-100">
-      {/* Left Sidebar - Projects */}
-      <div className="w-56 border-r border-neutral-800 flex flex-col">
-        <ProjectSelector
-          projects={projects}
-          currentProject={currentProject}
-          onSelect={setCurrentProject}
-          onCreate={createProject}
-          onDelete={deleteProject}
-        />
-      </div>
-
-      {/* Main Workspace - 3 Column Layout */}
-      <div className="flex-1 flex min-w-0">
-        {/* Left: File Explorer */}
-        {currentProject && (
-          <div className="w-64 border-r border-neutral-800">
-            <FileExplorer
-              projectId={currentProject.id}
-              files={files}
-              onRefresh={fetchFiles}
-              onFileSelect={(file) => !file.is_dir && setSelectedFile(file.path)}
+    <div className="flex h-screen bg-neutral-950 text-neutral-200 font-sans overflow-hidden">
+      {/* 1. Left Sidebar - Projects (Conversations) */}
+      <div className={`w-64 border-r border-neutral-800 bg-neutral-900 flex flex-col shrink-0 ${isMobileMenuOpen ? 'fixed inset-y-0 left-0 z-50' : 'hidden md:flex'}`}>
+        <div className="p-4 border-b border-neutral-800 flex items-center justify-between">
+          <div className="flex items-center gap-2 font-medium">
+            <Bot size={20} className="text-blue-500" />
+            <span>Agent Chat</span>
+          </div>
+          <button className="md:hidden" onClick={() => setIsMobileMenuOpen(false)}>
+            <X size={16} />
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-2">
+            <ProjectSelector 
+              currentProject={currentProject}
+              onSelect={setCurrentProject}
+              projects={projects}
+              onCreate={handleCreateProject}
+              onDelete={deleteProject}
             />
-          </div>
-        )}
-
-        {/* Center: Code Editor */}
-        {currentProject && selectedFile && (
-          <div className="w-96 border-r border-neutral-800">
-            <CodeEditor
-              projectId={currentProject.id}
-              filePath={selectedFile}
-              onClose={() => setSelectedFile(null)}
-            />
-          </div>
-        )}
-
-        {/* Right: Chat Area */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Header */}
-          <header className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
-            <div className="flex items-center gap-3">
-              <h1 className="text-base font-medium text-neutral-100">
-                {currentProject ? currentProject.name : 'Agent'}
-              </h1>
-              {currentProject && (
-                <div className="flex items-center gap-1.5">
-                  <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-                  <span className="text-[10px] text-neutral-500">{isConnected ? 'Connected' : 'Disconnected'}</span>
-                </div>
-              )}
-            </div>
-            {currentProject && (
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setRightPanel(rightPanel === 'terminal' ? null : 'terminal')}
-                  className={`p-2 rounded transition-colors ${rightPanel === 'terminal' ? 'bg-neutral-800 text-neutral-100' : 'text-neutral-500 hover:text-neutral-300'}`}
-                  title="Terminal"
-                >
-                  <TerminalIcon size={16} />
-                </button>
-              </div>
-            )}
-          </header>
-
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-              {!currentProject ? (
-                <div className="text-center py-20">
-                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-neutral-800 mb-4">
-                    <FolderKanban size={24} className="text-neutral-400" />
-                  </div>
-                  <h2 className="text-lg font-medium text-neutral-300 mb-2">
-                    Select or create a project
-                  </h2>
-                  <p className="text-sm text-neutral-500 max-w-sm mx-auto">
-                    Each project has its own workspace where the agent can create files and run code.
-                  </p>
-                </div>
-              ) : messages.length === 0 ? (
-                <div className="text-center py-20">
-                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-neutral-800 mb-4">
-                    <Bot size={24} className="text-neutral-400" />
-                  </div>
-                  <h2 className="text-lg font-medium text-neutral-300 mb-2">
-                    Ready to help
-                  </h2>
-                  <p className="text-sm text-neutral-500 max-w-sm mx-auto">
-                    Ask me to create files, write code, or run commands. I'll work in this project's workspace.
-                  </p>
-                </div>
-              ) : (
-                messages.map((msg, idx) => (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    key={idx}
-                    className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
-                  >
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                      msg.role === 'user' ? 'bg-blue-600' :
-                      msg.isError ? 'bg-red-600' : 'bg-neutral-700'
-                    }`}>
-                      {msg.role === 'user' ? <User size={14} /> :
-                       msg.isError ? <AlertCircle size={14} /> : <Bot size={14} />}
-                    </div>
-
-                    <div className={`max-w-[85%] space-y-2 ${msg.role === 'user' ? 'text-right' : ''}`}>
-                      {/* Tool calls summary */}
-                      {msg.toolCalls && msg.toolCalls.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {msg.toolCalls.map((tc, tcIdx) => (
-                            <span
-                              key={tcIdx}
-                              className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${
-                                tc.success ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                              }`}
-                            >
-                              {tc.tool}
-                              {tc.success ? ' ✓' : ' ✗'}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Message content */}
-                      <div className={`inline-block px-3 py-2 rounded-2xl text-sm ${
-                        msg.role === 'user'
-                          ? 'bg-blue-600 text-white'
-                          : msg.isError
-                            ? 'bg-red-500/10 border border-red-500/30 text-red-300'
-                            : 'bg-neutral-800 text-neutral-100'
-                      }`}>
-                        {msg.role === 'agent' && !msg.isError ? (
-                          <div className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-pre:bg-neutral-900 prose-pre:border prose-pre:border-neutral-700 prose-code:text-blue-300">
-                            <ReactMarkdown>{msg.content}</ReactMarkdown>
-                          </div>
-                        ) : (
-                          <p className="whitespace-pre-wrap">{msg.content}</p>
-                        )}
-                      </div>
-                    </div>
-                  </motion.div>
-                ))
-              )}
-
-              {/* Current tool calls (in progress) */}
-              {currentToolCalls.length > 0 && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
-                  <div className="w-7 h-7 rounded-full bg-neutral-700 flex items-center justify-center">
-                    <Bot size={14} />
-                  </div>
-                  <div className="space-y-1">
-                    {currentToolCalls.map((tc, idx) => (
-                      <div key={idx} className="flex items-center gap-2 text-xs text-neutral-400">
-                        {tc.status === 'executing' ? (
-                          <Loader2 size={12} className="animate-spin" />
-                        ) : tc.success ? (
-                          <span className="text-green-500">✓</span>
-                        ) : (
-                          <span className="text-red-500">✗</span>
-                        )}
-                        <span className="font-medium">{tc.tool}</span>
-                        {tc.tool === 'terminal' && tc.arguments?.command && (
-                          <code className="text-neutral-500">
-                            {String(tc.arguments.command).slice(0, 30)}
-                            {String(tc.arguments.command).length > 30 ? '...' : ''}
-                          </code>
-                        )}
-                        {tc.tool === 'write_file' && tc.arguments?.path && (
-                          <code className="text-neutral-500">{String(tc.arguments.path)}</code>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-
-              {/* Thinking indicator */}
-              {isProcessing && currentToolCalls.length === 0 && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
-                  <div className="w-7 h-7 rounded-full bg-neutral-700 flex items-center justify-center">
-                    <Bot size={14} />
-                  </div>
-                  <div className="flex items-center gap-1.5 px-3 py-2">
-                    <span className="w-1.5 h-1.5 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-1.5 h-1.5 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-1.5 h-1.5 bg-neutral-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                </motion.div>
-              )}
-
-              <div ref={messagesEndRef} />
-            </div>
-          </div>
-
-          {/* Input */}
-          <div className="border-t border-neutral-800 p-3">
-            <div className="max-w-3xl mx-auto flex gap-2">
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                placeholder={currentProject ? "Ask me to create something..." : "Select a project first"}
-                disabled={!currentProject || !isConnected}
-                className="flex-1 bg-neutral-800 border border-neutral-700 rounded-xl px-4 py-2.5 text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-neutral-600 disabled:opacity-50"
-              />
-              <button
-                onClick={sendMessage}
-                disabled={!input.trim() || isProcessing || !isConnected}
-                className="px-4 bg-blue-600 rounded-xl hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <Send size={16} />
-              </button>
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* Right Panel - Terminal */}
+      {/* 2. Main Content - Chat Interface (Central Focus) */}
+      <div className="flex-1 flex flex-col min-w-0 bg-neutral-950 relative">
+        {/* Header */}
+        <header className="flex items-center justify-between px-4 py-3 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur">
+          <div className="flex items-center gap-3">
+             <button className="md:hidden text-neutral-400" onClick={() => setIsMobileMenuOpen(true)}>
+               <Menu size={20} />
+             </button>
+             <h1 className="font-medium text-neutral-100">
+               {currentProject ? currentProject.name : 'Select a Conversation'}
+             </h1>
+             {currentProject && (
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} title={isConnected ? "Connected" : "Disconnected"} />
+             )}
+          </div>
+          
+          {currentProject && (
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={toggleWorkspace}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${isWorkspaceOpen ? 'bg-blue-600/20 text-blue-400' : 'hover:bg-neutral-800 text-neutral-400'}`}
+              >
+                <FolderKanban size={16} />
+                <span className="hidden sm:inline">Workspace</span>
+              </button>
+              <button
+                onClick={() => setIsTerminalVisible(!isTerminalVisible)}
+                className={`p-2 rounded-md transition-colors ${isTerminalVisible ? 'bg-neutral-800 text-neutral-100' : 'text-neutral-500 hover:text-neutral-300'}`}
+                title="Toggle Terminal"
+              >
+                <TerminalIcon size={16} />
+              </button>
+            </div>
+          )}
+        </header>
+
+        {/* Plan Visualizer (Top of Chat) */}
+        {currentPlan.length > 0 && (
+          <div className="border-b border-neutral-800">
+            <PlanVisualizer 
+              plan={currentPlan}
+              currentStepId={currentStepId}
+              validations={validations}
+              stepEvents={stepEvents}
+            />
+          </div>
+        )}
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+          {messages.map((msg, idx) => (
+            <motion.div 
+              key={idx}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`flex items-start gap-4 ${msg.role === 'agent' ? 'bg-neutral-900/50 -mx-4 px-4 py-4 border-y border-neutral-800/50' : 'max-w-3xl ml-auto'}`}
+            >
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${msg.role === 'agent' ? 'bg-blue-500/10 text-blue-400' : 'bg-neutral-800 text-neutral-400'}`}>
+                {msg.role === 'agent' ? <Bot size={18} /> : <User size={18} />}
+              </div>
+              
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className="prose prose-invert prose-sm max-w-none">
+                  <ReactMarkdown 
+                    components={{
+                      code: ({node, inline, className, children, ...props}: any) => {
+                        const match = /language-(\w+)/.exec(className || '')
+                        return !inline && match ? (
+                          <div className="relative group">
+                            <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <span className="text-xs text-neutral-500 font-mono">{match[1]}</span>
+                            </div>
+                            <pre className="bg-neutral-950 rounded-lg p-3 overflow-x-auto border border-neutral-800">
+                              <code className={className} {...props}>
+                                {children}
+                              </code>
+                            </pre>
+                          </div>
+                        ) : (
+                          <code className="bg-neutral-800 rounded px-1 py-0.5 text-neutral-200" {...props}>
+                            {children}
+                          </code>
+                        )
+                      }
+                    }}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
+                </div>
+
+                {/* Tool Calls Display (Inline) */}
+                {msg.toolCalls && msg.toolCalls.map((tc, tcIdx) => (
+                  <div key={tcIdx} className="bg-neutral-900 border border-neutral-800 rounded-md overflow-hidden text-xs font-mono">
+                    <div className="px-3 py-2 bg-neutral-800/50 flex items-center justify-between border-b border-neutral-800">
+                      <div className="flex items-center gap-2">
+                        <TerminalIcon size={12} className="text-neutral-500" />
+                        <span className="text-neutral-300 font-semibold">{tc.tool}</span>
+                      </div>
+                      <span className={tc.status === 'done' ? (tc.success ? 'text-green-400' : 'text-red-400') : 'text-blue-400'}>
+                         {tc.status === 'done' ? (tc.success ? 'Success' : 'Failed') : 'Executing...'}
+                      </span>
+                    </div>
+                    {tc.output && (
+                      <div className="p-3 max-h-40 overflow-y-auto whitespace-pre-wrap text-neutral-400">
+                        {tc.output}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                
+                {msg.isError && (
+                  <div className="flex items-center gap-2 text-red-400 text-sm mt-2">
+                    <AlertCircle size={16} />
+                    <span>An error occurred processing this request.</span>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          ))}
+          
+          {isProcessing && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex items-center gap-2 text-neutral-500 text-sm px-4"
+            >
+              <Loader2 size={16} className="animate-spin" />
+              <span>Agent is thinking...</span>
+            </motion.div>
+          )}
+          
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input Area */}
+        <div className="p-4 bg-neutral-900 border-t border-neutral-800">
+          <div className="max-w-4xl mx-auto relative">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+              placeholder="Ask me anything..."
+              disabled={isProcessing || !isConnected}
+              className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-3 pr-12 text-neutral-200 placeholder-neutral-600 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+            />
+            <button
+              onClick={sendMessage}
+              disabled={isProcessing || !isConnected || !input.trim()}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-blue-500 hover:text-blue-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Send size={18} />
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      {/* 3. Right Sidebar - Collapsible Workspace (Explorer + Editor) */}
       <AnimatePresence>
-        {currentProject && rightPanel === 'terminal' && (
+        {isWorkspaceOpen && (
+           <motion.div 
+             initial={{ width: 0, opacity: 0 }}
+             animate={{ width: 450, opacity: 1 }} // Fixed width for workspace
+             exit={{ width: 0, opacity: 0 }}
+             transition={{ type: "spring", stiffness: 300, damping: 30 }}
+             className="border-l border-neutral-800 bg-neutral-900 flex flex-col shrink-0 overflow-hidden relative"
+           >
+              {/* Workspace Header & Fullscreen Toggle */}
+              <div className="flex items-center justify-between p-2 border-b border-neutral-800 bg-neutral-800/50">
+                <span className="text-xs font-medium text-neutral-400 px-2">WORKSPACE</span>
+                <div className="flex items-center gap-1">
+                   <button onClick={handleToggleFullscreen} className="p-1 hover:bg-neutral-700 rounded text-neutral-400" title="Fullscreen Editor">
+                     <FileCode size={14} />
+                   </button>
+                   <button onClick={toggleWorkspace} className="p-1 hover:bg-neutral-700 rounded text-neutral-400">
+                     <X size={14} />
+                   </button>
+                </div>
+              </div>
+
+             <div className="flex-1 flex flex-col min-h-0">
+               {/* File Explorer (Top Half) */}
+               <div className="h-1/3 border-b border-neutral-800 flex flex-col min-h-0">
+                 <FileExplorer 
+                   projectId={currentProject?.id || null}
+                   files={files}
+                   onRefresh={fetchFiles}
+                   onSelectFile={(file) => setSelectedFile(file.path)}
+                 />
+               </div>
+               
+               {/* Code Editor (Bottom Half) */}
+               <div className="flex-1 flex flex-col min-h-0">
+                 {selectedFile && currentProject ? (
+                   <CodeEditor 
+                     projectId={currentProject.id}
+                     filePath={selectedFile} 
+                     onClose={() => setSelectedFile(null)}
+                     readOnly={false}
+                     isFullscreen={isEditorFullscreen} 
+                     onToggleFullscreen={handleToggleFullscreen} 
+                   />
+                 ) : (
+                   <div className="flex-1 flex items-center justify-center text-neutral-600 text-sm">
+                     Select a file to edit
+                   </div>
+                 )}
+               </div>
+             </div>
+           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Fullscreen Editor Overlay */}
+      <AnimatePresence>
+        {isEditorFullscreen && selectedFile && currentProject && (
           <motion.div
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 400, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="border-l border-neutral-800 overflow-hidden"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="fixed inset-0 z-50 bg-neutral-950 flex flex-col"
           >
-            <Terminal entries={terminalEntries} />
+             <CodeEditor 
+               projectId={currentProject.id}
+               filePath={selectedFile} 
+               onClose={() => setIsEditorFullscreen(false)}
+               readOnly={false}
+               isFullscreen={true} 
+               onToggleFullscreen={handleToggleFullscreen} 
+             />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Auto-Hiding Terminal Overlay */}
+      <AnimatePresence>
+        {isTerminalVisible && !isEditorFullscreen && (
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="fixed bottom-0 left-64 right-0 z-40 bg-neutral-900 border-t border-neutral-800 shadow-2xl"
+            style={{ height: '30vh', right: isWorkspaceOpen ? '450px' : '0' }} // Adjust right based on workspace
+          >
+             <div className="flex items-center justify-between px-4 py-2 bg-neutral-800 border-b border-neutral-700 h-10">
+               <span className="text-xs font-medium text-neutral-400 flex items-center gap-2">
+                 <TerminalIcon size={12} />
+                 TERMINAL
+               </span>
+               <button 
+                 onClick={() => setIsTerminalVisible(false)}
+                 className="text-neutral-500 hover:text-neutral-300"
+               >
+                 <X size={14} />
+               </button>
+             </div>
+             <div className="h-[calc(30vh-40px)]">
+               <Terminal entries={terminalEntries} />
+             </div>
           </motion.div>
         )}
       </AnimatePresence>

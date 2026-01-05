@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Folder, File, ChevronRight, ChevronDown, RefreshCw } from 'lucide-react'
 
-type FileInfo = {
+export type FileInfo = {
   name: string
   path: string
   is_dir: boolean
@@ -13,10 +13,10 @@ type FileExplorerProps = {
   projectId: string | null
   files: FileInfo[]
   onRefresh: () => void
-  onFileSelect?: (file: FileInfo) => void
+  onSelectFile?: (file: FileInfo) => void
 }
 
-export function FileExplorer({ projectId, files, onRefresh, onFileSelect }: FileExplorerProps) {
+export function FileExplorer({ projectId, files, onRefresh, onSelectFile }: FileExplorerProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
 
   const toggleDir = (path: string) => {
@@ -71,7 +71,7 @@ export function FileExplorer({ projectId, files, onRefresh, onFileSelect }: File
               <div
                 key={file.path}
                 className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-neutral-800 cursor-pointer group"
-                onClick={() => file.is_dir ? toggleDir(file.path) : onFileSelect?.(file)}
+                onClick={() => file.is_dir ? toggleDir(file.path) : onSelectFile?.(file)}
               >
                 {file.is_dir ? (
                   <>

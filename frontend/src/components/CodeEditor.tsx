@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
-import { Save, X, FileCode } from 'lucide-react'
+import { Save, X, FileCode, Maximize2, Minimize2 } from 'lucide-react'
 
 type CodeEditorProps = {
   projectId: string
   filePath: string | null
   onClose: () => void
+  onToggleFullscreen?: () => void
+  isFullscreen?: boolean
+  readOnly?: boolean
 }
 
 const API_BASE = 'http://localhost:8000'
 
-export function CodeEditor({ projectId, filePath, onClose }: CodeEditorProps) {
+export function CodeEditor({ projectId, filePath, onClose, onToggleFullscreen, isFullscreen, readOnly }: CodeEditorProps) {
   const [content, setContent] = useState('')
   const [originalContent, setOriginalContent] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -110,6 +113,19 @@ export function CodeEditor({ projectId, filePath, onClose }: CodeEditorProps) {
           {isDirty && <span className="text-xs text-orange-400">●</span>}
         </div>
         <div className="flex items-center gap-1">
+          {onToggleFullscreen && (
+            <button
+              onClick={onToggleFullscreen}
+              className="p-1.5 rounded hover:bg-neutral-800 transition-colors mr-1"
+              title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+            >
+              {isFullscreen ? (
+                <Minimize2 size={14} className="text-neutral-500" />
+              ) : (
+                <Maximize2 size={14} className="text-neutral-500" />
+              )}
+            </button>
+          )}
           <button
             onClick={handleSave}
             disabled={!isDirty || isSaving}
@@ -151,6 +167,7 @@ export function CodeEditor({ projectId, filePath, onClose }: CodeEditorProps) {
             scrollBeyondLastLine: false,
             automaticLayout: true,
             tabSize: 2,
+            readOnly: readOnly,
           }}
         />
       )}
