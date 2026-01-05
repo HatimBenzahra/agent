@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import chat
+from app.api import endpoints
 
-app = FastAPI(title="Orchestrator Agent")
+app = FastAPI(title="Agent API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -12,10 +12,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include the Chat Router
-# The websocket will be at /ws/chat because we prefix it here
-app.include_router(chat.router, prefix="/ws")
+# Include the endpoints router
+# The previous server.py had paths like /api/projects and /ws/chat
+# so we include it at root.
+app.include_router(endpoints.router)
 
-@app.get("/")
-def read_root():
-    return {"status": "ok", "message": "Orchestrator Agent is running"}
+@app.get("/health")
+async def health():
+    return {"status": "ok"}

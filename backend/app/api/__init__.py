@@ -1,1 +1,1 @@
-# API package
+from .endpoints import router
