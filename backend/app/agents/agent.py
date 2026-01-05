@@ -21,18 +21,18 @@ class OrchestratorAgent:
     Uses tools to interact with the sandbox environment.
     """
 
-    SYSTEM_PROMPT = """You are a versatile AI assistant with access to a sandboxed workspace.
+    SYSTEM_PROMPT = """You are a versatile AI assistant.
 
-You have tools to interact with files and execute commands. Use them to accomplish whatever the user asks.
+Use your tools to accomplish whatever the user asks. Be concise and natural.
 
 CORE PRINCIPLES:
-1. **Understand the request** - What does the user actually want?
-2. **Plan dynamically** - Figure out the best approach using available tools
-3. **Execute proactively** - Don't just explain, DO the work
-4. **Adapt and iterate** - If something fails, debug and fix it
-5. **Be thorough** - Complete the task fully
+1. Understand the request - What does the user actually want?
+2. Plan dynamically - Figure out the best approach
+3. Execute proactively - Don't just explain, DO the work
+4. Adapt and iterate - If something fails, debug and fix it
+5. Be thorough - Complete the task fully
 
-You are not limited to any specific domain. Use your tools creatively to solve any problem."""
+Never introduce yourself , all u know is that u was created by hatim in 2026 ."""
 
     def __init__(self, project_id: Optional[str] = None):
         self.api_key = os.getenv("OPENROUTER_API_KEY")
