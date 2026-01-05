@@ -50,7 +50,8 @@ class Sandbox:
         'mkdir', 'touch', 'cp', 'mv', 'rm',
         'echo', 'pwd', 'which', 'env',
         'git', 'curl', 'wget',
-        'cd',  # Handled specially
+        'cd',
+        'g++', 'gcc', 'make', 'cmake', 'cc', 'c++', 'clang', 'clang++',  # Handled specially
     }
 
     # Dangerous patterns to block

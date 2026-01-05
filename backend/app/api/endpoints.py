@@ -144,6 +144,14 @@ async def delete_file(project_id: str, path: str):
     return {"success": True, "message": message}
 
 
+@router.get("/api/projects/{project_id}/chat/history")
+async def get_chat_history(project_id: str):
+    """Get chat history for a project."""
+    from app.agents.chat_history import chat_history_manager
+    messages = chat_history_manager.load(project_id)
+    return {"messages": messages}
+
+
 # ============== WebSocket Endpoints ==============
 
 @router.websocket("/ws/chat/{project_id}")

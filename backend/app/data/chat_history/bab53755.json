@@ -1,0 +1,10 @@
+[
+  {
+    "role": "user",
+    "content": "alors ? "
+  },
+  {
+    "role": "assistant",
+    "content": "Bonjour ! Je suis un assistant de programmation avec acc\u00e8s \u00e0 un espace de travail. Je peux vous aider \u00e0 cr\u00e9er des projets, \u00e9crire du code, ex\u00e9cuter des commandes, etc.\n\nJe vois que vous avez simplement dit \"alors ?\". Comment puis-je vous aider aujourd'hui ? \n\nSouhaitez-vous :\n1. Cr\u00e9er un projet (Python, JavaScript, HTML, etc.)\n2. \u00c9crire un programme sp\u00e9cifique\n3. R\u00e9soudre un probl\u00e8me de programmation\n4. Apprendre quelque chose de particulier\n5. Autre chose ?\n\nN'h\u00e9sitez pas \u00e0 me d\u00e9crire ce que vous aimeriez faire !"
+  }
+]

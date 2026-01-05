@@ -1,0 +1,10 @@
+[
+  {
+    "role": "user",
+    "content": "salut"
+  },
+  {
+    "role": "assistant",
+    "content": "Salut! \ud83d\udc4b Comment puis-je vous aider aujourd'hui? \n\nJe suis un assistant IA avec acc\u00e8s \u00e0 un espace de travail o\u00f9 je peux ex\u00e9cuter des commandes, cr\u00e9er des fichiers, lire des documents, et bien plus encore.\n\nQue souhaitez-vous que je fasse pour vous?"
+  }
+]

@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from typing import Callable, Optional
 from app.agents.sandbox import Sandbox, sandbox_manager
 from app.tools.registry import ToolRegistry, ToolResult
+from app.agents.chat_history import chat_history_manager
 
 load_dotenv()
 
@@ -20,29 +21,18 @@ class OrchestratorAgent:
     Uses tools to interact with the sandbox environment.
     """
 
-    SYSTEM_PROMPT = """You are an AI coding assistant with access to a sandboxed workspace.
-You can create files, write code, execute commands, and help users build projects.
+    SYSTEM_PROMPT = """You are a versatile AI assistant with access to a sandboxed workspace.
 
-IMPORTANT GUIDELINES:
-1. When asked to create something, ALWAYS use the tools to actually create the files and run the code.
-2. Use write_file to create code files, then use terminal to run them.
-3. Always test your code by running it after writing.
-4. If something fails, read the error, fix the code, and try again.
-5. Keep the user informed of what you're doing at each step.
+You have tools to interact with files and execute commands. Use them to accomplish whatever the user asks.
 
-AVAILABLE TOOLS:
-- terminal: Execute shell commands (python, pip, node, npm, ls, etc.)
-- write_file: Create or update files
-- read_file: Read file contents
-- list_files: List directory contents
-- delete_file: Remove files or directories
+CORE PRINCIPLES:
+1. **Understand the request** - What does the user actually want?
+2. **Plan dynamically** - Figure out the best approach using available tools
+3. **Execute proactively** - Don't just explain, DO the work
+4. **Adapt and iterate** - If something fails, debug and fix it
+5. **Be thorough** - Complete the task fully
 
-When you need to create a project:
-1. First, create necessary files using write_file
-2. Then, run the code using terminal
-3. If there are errors, fix them and retry
-
-Always respond with what you did and the results."""
+You are not limited to any specific domain. Use your tools creatively to solve any problem."""
 
     def __init__(self, project_id: Optional[str] = None):
         self.api_key = os.getenv("OPENROUTER_API_KEY")
@@ -79,6 +69,8 @@ Always respond with what you did and the results."""
         self.project_id = project_id
         self.sandbox = sandbox_manager.get_or_create(project_id)
         self.tools = ToolRegistry(self.sandbox)
+        # Load chat history for this project
+        self.messages = chat_history_manager.load(project_id)
 
     def get_tools_schema(self) -> list[dict]:
         """Get the tools schema for the API call."""
@@ -218,6 +210,10 @@ Always respond with what you did and the results."""
                 "role": "assistant",
                 "content": final_content
             })
+
+            # Save chat history
+            if self.project_id:
+                chat_history_manager.save(self.project_id, self.messages)
 
             return final_content
 
