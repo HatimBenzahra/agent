@@ -42,16 +42,15 @@ class Sandbox:
     Provides isolated file system and command execution.
     """
 
-    # Whitelist of allowed commands (base commands, can be extended)
     ALLOWED_COMMANDS = {
         'python', 'python3', 'pip', 'pip3',
         'node', 'npm', 'npx',
-        'ls', 'cat', 'head', 'tail', 'grep', 'find',
+        'ls', 'cat', 'head', 'tail', 'grep', 'find', 'file', 'wc', 'xargs',
         'mkdir', 'touch', 'cp', 'mv', 'rm',
         'echo', 'pwd', 'which', 'env',
         'git', 'curl', 'wget',
-        'cd', 'pwd',
-        'g++', 'gcc', 'make', 'cmake', 'cc', 'c++', 'clang', 'clang++',  # Handled specially
+        'cd', 'pwd', 'ls', 'pwd', 'which', 'env', 'cat', 'head', 'tail', 'grep', 'find', 'file', 'wc', 'xargs',
+        'g++', 'gcc', 'make', 'cmake', 'cc', 'c++', 'clang', 'clang++',
     }
 
     # Dangerous patterns to block
@@ -59,7 +58,7 @@ class Sandbox:
         'sudo', 'su ', 'chmod 777', 'rm -rf /',
         '/etc/', '/usr/', '/bin/', '/sbin/',
         '~/', '../', '$HOME',
-        'eval', 'exec',
+        'eval', # Removed 'exec' to allow 'find -exec' and similar
     ]
 
     def __init__(self, project_id: str, workspace_path: Path):

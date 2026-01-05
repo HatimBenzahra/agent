@@ -188,6 +188,7 @@ async def websocket_chat(websocket: WebSocket, project_id: str):
     WebSocket endpoint for chat with the agent.
     Streams tool calls and results in real-time.
     Includes ping-pong heartbeat to keep connection alive.
+    Supports stop/interrupt commands.
     """
     await websocket.accept()
     print(f"Client connected to project: {project_id}")
@@ -211,7 +212,42 @@ async def websocket_chat(websocket: WebSocket, project_id: str):
                 await websocket.send_text("pong")
                 continue
 
-            print(f"[{project_id}] Received: {data}")
+            # Handle stop command
+            if data == "__STOP__":
+                print(f"[{project_id}] Stop requested")
+                agent.request_stop()
+                await websocket.send_json({
+                    "type": "stop_acknowledged",
+                    "message": "Stop request received. Finishing current operation..."
+                })
+                continue
+
+            # Handle stop with message (JSON format)
+            pending_message = None
+            try:
+                parsed = json.loads(data)
+                if parsed.get("type") == "stop":
+                    msg = parsed.get("message", "")
+                    print(f"[{project_id}] Stop requested with message: {msg}")
+                    agent.request_stop(msg)
+                    await websocket.send_json({
+                        "type": "stop_acknowledged",
+                        "message": "Stop request received. Finishing current operation..."
+                    })
+                    # If there's a message, queue it for processing after current task completes
+                    if msg:
+                        pending_message = msg
+                    else:
+                        continue
+                # If it's a regular JSON message with content, extract it
+                elif "content" in parsed:
+                    data = parsed["content"]
+            except json.JSONDecodeError:
+                pass  # Not JSON, treat as regular message
+
+            # Use pending message if we have one (from interrupt), otherwise use data
+            message_to_process = pending_message if pending_message else data
+            print(f"[{project_id}] Processing: {message_to_process}")
 
             # Define callback to stream events to client
             async def progress_callback(event):
@@ -225,7 +261,7 @@ async def websocket_chat(websocket: WebSocket, project_id: str):
 
             try:
                 # Run agent with callback
-                response = await agent.run(data, callback=progress_callback)
+                response = await agent.run(message_to_process, callback=progress_callback)
 
                 # Send final answer
                 try:

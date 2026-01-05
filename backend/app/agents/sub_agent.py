@@ -92,6 +92,12 @@ CRITICAL RULES:
 - **BE RESOURCEFUL**: If you need to manipulate a PDF and don't know how, write a script to check available libraries first.
 - **FINAL OUTPUT**: Your goal is to achieve the OBJECTIVE. The output should be the result of that achievement.
 
+PRO TIP - DOCUMENTATION TO PDF:
+If the user wants a PDF from multiple documentation files:
+1. Join ALL content into one single `.md` file first.
+2. Use a Python script with `fpdf` or `reportlab` to convert that single `.md` to PDF.
+3. This is much faster and reliable than processing files one by one.
+
 EXAMPLE - User wants to "check disk space":
 - You: terminal('df -h') -> Done.
 
@@ -117,14 +123,28 @@ Start NOW."""
             while iteration < max_iterations:
                 iteration += 1
                 
-                response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    tools=self.tools.list_tools(),
-                    tool_choice="auto"
-                )
-                
-                message = response.choices[0].message
+                try:
+                    response = await self.client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        tools=self.tools.list_tools(),
+                        tool_choice="auto"
+                    )
+                    
+                    message = response.choices[0].message
+                    
+                    # Handle empty output error
+                    if not message.content and not message.tool_calls:
+                        if iteration < max_iterations:
+                            messages.append({"role": "user", "content": "Your previous response was empty. Please use a tool to make progress or provide an answer."})
+                            continue
+                        else:
+                            raise ValueError("Model returned empty output multiple times.")
+                except Exception as e:
+                    if "model output must contain either output text or tool calls" in str(e) and iteration < max_iterations:
+                        messages.append({"role": "user", "content": "Your previous response was empty. Please use a tool to make progress or provide an answer."})
+                        continue
+                    raise e
                 
                 if not message.tool_calls:
                     # No more tool calls, we're done

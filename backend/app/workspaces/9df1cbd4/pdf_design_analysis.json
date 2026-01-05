@@ -1,0 +1,817 @@
+{
+  "markdown_analysis": {
+    "file_name": "documentation-complete-compiled.md",
+    "file_size_bytes": 56980,
+    "total_lines": 1665,
+    "total_words": 7346,
+    "total_characters": 55881,
+    "heading_counts": {
+      "h1": 9,
+      "h2": 10,
+      "h3": 42,
+      "h4": 88
+    },
+    "code_block_count": 56,
+    "list_count": 490,
+    "table_count": 68,
+    "link_count": 45,
+    "image_count": 0,
+    "section_structure": [
+      {
+        "type": "h1",
+        "content": "Documentation Complète de l'API Notion et Plan d'Amélioration",
+        "line": 1
+      },
+      {
+        "type": "h2",
+        "content": "Table des Matières",
+        "line": 3
+      },
+      {
+        "type": "h2",
+        "content": "Résumé Exécutif",
+        "line": 41
+      },
+      {
+        "type": "h2",
+        "content": "Contexte du Projet",
+        "line": 58
+      },
+      {
+        "type": "h3",
+        "content": "Domaine Principal",
+        "line": 60
+      },
+      {
+        "type": "h3",
+        "content": "Type de Projet",
+        "line": 65
+      },
+      {
+        "type": "h3",
+        "content": "Caractéristiques Clés",
+        "line": 70
+      },
+      {
+        "type": "h3",
+        "content": "Analyse des Fichiers",
+        "line": 83
+      },
+      {
+        "type": "h3",
+        "content": "Notes d'Analyse",
+        "line": 87
+      },
+      {
+        "type": "h2",
+        "content": "Documentation de l'API Notion",
+        "line": 96
+      },
+      {
+        "type": "h3",
+        "content": "Introduction",
+        "line": 98
+      },
+      {
+        "type": "h4",
+        "content": "Caractéristiques principales",
+        "line": 102
+      },
+      {
+        "type": "h3",
+        "content": "Authentification",
+        "line": 111
+      },
+      {
+        "type": "h4",
+        "content": "Clé API",
+        "line": 113
+      },
+      {
+        "type": "h4",
+        "content": "Créer une intégration",
+        "line": 122
+      },
+      {
+        "type": "h4",
+        "content": "Configuration des en-têtes HTTP",
+        "line": 128
+      },
+      {
+        "type": "h1",
+        "content": "En-têtes requis pour toutes les requêtes",
+        "line": 130
+      },
+      {
+        "type": "h3",
+        "content": "Endpoints Principaux",
+        "line": 138
+      },
+      {
+        "type": "h4",
+        "content": "Bases de données",
+        "line": 140
+      },
+      {
+        "type": "h4",
+        "content": "Pages",
+        "line": 148
+      },
+      {
+        "type": "h4",
+        "content": "Blocs",
+        "line": 155
+      },
+      {
+        "type": "h4",
+        "content": "Autres endpoints",
+        "line": 164
+      },
+      {
+        "type": "h3",
+        "content": "Types de Données",
+        "line": 173
+      },
+      {
+        "type": "h4",
+        "content": "Propriétés de page principales",
+        "line": 175
+      },
+      {
+        "type": "h4",
+        "content": "Types de propriétés disponibles",
+        "line": 236
+      },
+      {
+        "type": "h3",
+        "content": "Bases de Données",
+        "line": 255
+      },
+      {
+        "type": "h4",
+        "content": "Créer une base de données",
+        "line": 257
+      },
+      {
+        "type": "h4",
+        "content": "Interroger une base de données",
+        "line": 298
+      },
+      {
+        "type": "h4",
+        "content": "Filtres disponibles",
+        "line": 331
+      },
+      {
+        "type": "h3",
+        "content": "Pages",
+        "line": 345
+      },
+      {
+        "type": "h4",
+        "content": "Créer une page dans une base de données",
+        "line": 347
+      },
+      {
+        "type": "h4",
+        "content": "Créer une page sous une autre page",
+        "line": 382
+      },
+      {
+        "type": "h4",
+        "content": "Mettre à jour une page",
+        "line": 401
+      },
+      {
+        "type": "h4",
+        "content": "Archiver une page",
+        "line": 420
+      },
+      {
+        "type": "h3",
+        "content": "Blocs",
+        "line": 429
+      },
+      {
+        "type": "h4",
+        "content": "Types de blocs supportés",
+        "line": 431
+      },
+      {
+        "type": "h4",
+        "content": "Structure d'un bloc",
+        "line": 452
+      },
+      {
+        "type": "h4",
+        "content": "Ajouter des blocs enfants à une page",
+        "line": 480
+      },
+      {
+        "type": "h4",
+        "content": "Exemple de bloc code avec langage",
+        "line": 544
+      },
+      {
+        "type": "h3",
+        "content": "Utilisateurs",
+        "line": 573
+      },
+      {
+        "type": "h4",
+        "content": "Récupérer tous les utilisateurs",
+        "line": 575
+      },
+      {
+        "type": "h4",
+        "content": "Structure d'un utilisateur",
+        "line": 582
+      },
+      {
+        "type": "h4",
+        "content": "Types d'utilisateurs",
+        "line": 596
+      },
+      {
+        "type": "h3",
+        "content": "Recherche",
+        "line": 603
+      },
+      {
+        "type": "h4",
+        "content": "Rechercher du contenu",
+        "line": 605
+      },
+      {
+        "type": "h4",
+        "content": "Filtres de recherche",
+        "line": 621
+      },
+      {
+        "type": "h3",
+        "content": "Webhooks",
+        "line": 650
+      },
+      {
+        "type": "h4",
+        "content": "Configuration des webhooks",
+        "line": 652
+      },
+      {
+        "type": "h4",
+        "content": "Structure d'un événement webhook",
+        "line": 658
+      },
+      {
+        "type": "h4",
+        "content": "Types d'événements",
+        "line": 673
+      },
+      {
+        "type": "h4",
+        "content": "Vérification du webhook",
+        "line": 682
+      },
+      {
+        "type": "h3",
+        "content": "Exemples de Code",
+        "line": 699
+      },
+      {
+        "type": "h4",
+        "content": "Python avec requests",
+        "line": 701
+      },
+      {
+        "type": "h1",
+        "content": "Utilisation",
+        "line": 759
+      },
+      {
+        "type": "h1",
+        "content": "Créer une tâche",
+        "line": 762
+      },
+      {
+        "type": "h4",
+        "content": "JavaScript/Node.js avec le SDK officiel",
+        "line": 781
+      },
+      {
+        "type": "h3",
+        "content": "Limitations et Quotas",
+        "line": 871
+      },
+      {
+        "type": "h4",
+        "content": "Limites de taux",
+        "line": 873
+      },
+      {
+        "type": "h4",
+        "content": "Bonnes pratiques pour éviter les limites",
+        "line": 881
+      },
+      {
+        "type": "h4",
+        "content": "Exemple de retry avec backoff",
+        "line": 887
+      },
+      {
+        "type": "h3",
+        "content": "Bonnes Pratiques",
+        "line": 914
+      },
+      {
+        "type": "h4",
+        "content": "1. Validation des données",
+        "line": 916
+      },
+      {
+        "type": "h1",
+        "content": "Valider les types de propriétés",
+        "line": 926
+      },
+      {
+        "type": "h4",
+        "content": "2. Gestion des erreurs robuste",
+        "line": 934
+      },
+      {
+        "type": "h4",
+        "content": "3. Performance et optimisation",
+        "line": 958
+      },
+      {
+        "type": "h4",
+        "content": "4. Sécurité",
+        "line": 964
+      },
+      {
+        "type": "h3",
+        "content": "Codes d'Erreur",
+        "line": 972
+      },
+      {
+        "type": "h4",
+        "content": "Codes HTTP courants",
+        "line": 974
+      },
+      {
+        "type": "h4",
+        "content": "Messages d'erreur spécifiques",
+        "line": 989
+      },
+      {
+        "type": "h3",
+        "content": "Ressources Utiles",
+        "line": 1010
+      },
+      {
+        "type": "h4",
+        "content": "Documentation officielle",
+        "line": 1012
+      },
+      {
+        "type": "h4",
+        "content": "Communauté et support",
+        "line": 1018
+      },
+      {
+        "type": "h4",
+        "content": "Outils et bibliothèques",
+        "line": 1024
+      },
+      {
+        "type": "h4",
+        "content": "Exemples de projets",
+        "line": 1031
+      },
+      {
+        "type": "h4",
+        "content": "Guide de migration",
+        "line": 1038
+      },
+      {
+        "type": "h1",
+        "content": "Script de test pour vérifier la connexion",
+        "line": 1049
+      },
+      {
+        "type": "h1",
+        "content": "Test de récupération de l'utilisateur",
+        "line": 1052
+      },
+      {
+        "type": "h1",
+        "content": "Test de création de page",
+        "line": 1056
+      },
+      {
+        "type": "h1",
+        "content": "Test de suppression",
+        "line": 1060
+      },
+      {
+        "type": "h2",
+        "content": "Plan d'Amélioration de la Documentation",
+        "line": 1078
+      },
+      {
+        "type": "h3",
+        "content": "Objectif Principal",
+        "line": 1080
+      },
+      {
+        "type": "h3",
+        "content": "Livrables Clés",
+        "line": 1084
+      },
+      {
+        "type": "h4",
+        "content": "1. Structure de documentation améliorée",
+        "line": 1086
+      },
+      {
+        "type": "h4",
+        "content": "2. Couverture de contenu étendue",
+        "line": 1092
+      },
+      {
+        "type": "h4",
+        "content": "3. Améliorations de l'expérience développeur",
+        "line": 1099
+      },
+      {
+        "type": "h4",
+        "content": "4. Automatisation et outils",
+        "line": 1106
+      },
+      {
+        "type": "h4",
+        "content": "5. Ressources communautaires et support",
+        "line": 1112
+      },
+      {
+        "type": "h3",
+        "content": "Critères de Succès",
+        "line": 1118
+      },
+      {
+        "type": "h4",
+        "content": "Métriques quantitatives",
+        "line": 1120
+      },
+      {
+        "type": "h4",
+        "content": "Métriques qualitatives",
+        "line": 1128
+      },
+      {
+        "type": "h4",
+        "content": "Exigences techniques",
+        "line": 1135
+      },
+      {
+        "type": "h3",
+        "content": "Priorités de Phase 1 (30 prochains jours)",
+        "line": 1142
+      },
+      {
+        "type": "h3",
+        "content": "Parties prenantes",
+        "line": 1158
+      },
+      {
+        "type": "h3",
+        "content": "Risques et Atténuation",
+        "line": 1164
+      },
+      {
+        "type": "h3",
+        "content": "Vision à long terme",
+        "line": 1177
+      },
+      {
+        "type": "h2",
+        "content": "Plan de Mise en Œuvre Détaillé",
+        "line": 1182
+      },
+      {
+        "type": "h3",
+        "content": "Phase 1 : Évaluation et Planification (Semaine 1)",
+        "line": 1184
+      },
+      {
+        "type": "h4",
+        "content": "Étape 1.1 : Audit de documentation et analyse des lacunes",
+        "line": 1186
+      },
+      {
+        "type": "h4",
+        "content": "Étape 1.2 : Conception d'architecture modulaire",
+        "line": 1200
+      },
+      {
+        "type": "h4",
+        "content": "Étape 1.3 : Configuration des outils et infrastructure",
+        "line": 1214
+      },
+      {
+        "type": "h3",
+        "content": "Phase 2 : Amélioration Structurelle (Semaine 2-3)",
+        "line": 1228
+      },
+      {
+        "type": "h4",
+        "content": "Étape 2.1 : Implémentation de documentation modulaire",
+        "line": 1230
+      },
+      {
+        "type": "h4",
+        "content": "Étape 2.2 : Implémentation du système de build",
+        "line": 1279
+      },
+      {
+        "type": "h4",
+        "content": "Étape 2.3 : Améliorations de l'expérience développeur",
+        "line": 1293
+      },
+      {
+        "type": "h3",
+        "content": "Phase 3 : Expansion du Contenu (Semaine 4)",
+        "line": 1307
+      },
+      {
+        "type": "h4",
+        "content": "Étape 3.1 : Développement de contenu manquant",
+        "line": 1309
+      },
+      {
+        "type": "h4",
+        "content": "Étape 3.2 : Amélioration des exemples de code",
+        "line": 1327
+      },
+      {
+        "type": "h4",
+        "content": "Étape 3.3 : Ressources de dépannage et support",
+        "line": 1341
+      },
+      {
+        "type": "h3",
+        "content": "Phase 4 : Automatisation et Tests (Semaine 5)",
+        "line": 1355
+      },
+      {
+        "type": "h4",
+        "content": "Étape 4.1 : Implémentation de tests automatisés",
+        "line": 1357
+      },
+      {
+        "type": "h4",
+        "content": "Étape 4.2 : Implémentation du pipeline CI/CD",
+        "line": 1371
+      },
+      {
+        "type": "h4",
+        "content": "Étape 4.3 : Détection des changements d'API",
+        "line": 1385
+      },
+      {
+        "type": "h3",
+        "content": "Phase 5 : Communauté et Maintenance (Semaine 6-7)",
+        "line": 1399
+      },
+      {
+        "type": "h4",
+        "content": "Étape 5.1 : Développement du framework communautaire",
+        "line": 1401
+      },
+      {
+        "type": "h4",
+        "content": "Étape 5.2 : Ressources d'apprentissage et formation",
+        "line": 1415
+      },
+      {
+        "type": "h4",
+        "content": "Étape 5.3 : Stratégie de maintenance à long terme",
+        "line": 1429
+      },
+      {
+        "type": "h3",
+        "content": "Phase 6 : Lancement et Promotion (Semaine 8)",
+        "line": 1443
+      },
+      {
+        "type": "h4",
+        "content": "Étape 6.1 : Tests finaux et assurance qualité",
+        "line": 1445
+      },
+      {
+        "type": "h4",
+        "content": "Étape 6.2 : Préparation du lancement",
+        "line": 1459
+      },
+      {
+        "type": "h4",
+        "content": "Étape 6.3 : Activités post-lancement",
+        "line": 1473
+      },
+      {
+        "type": "h2",
+        "content": "Métriques de Succès",
+        "line": 1487
+      },
+      {
+        "type": "h3",
+        "content": "Tableau de bord des métriques",
+        "line": 1489
+      },
+      {
+        "type": "h4",
+        "content": "Quantitatives (Mesurées hebdomadairement):",
+        "line": 1491
+      },
+      {
+        "type": "h4",
+        "content": "Qualitatives (Mesurées bi-hebdomadairement):",
+        "line": 1498
+      },
+      {
+        "type": "h2",
+        "content": "Actions Immédiates",
+        "line": 1504
+      },
+      {
+        "type": "h3",
+        "content": "1. **Aujourd'hui**:",
+        "line": 1506
+      },
+      {
+        "type": "h3",
+        "content": "2. **Demain**:",
+        "line": 1511
+      },
+      {
+        "type": "h3",
+        "content": "3. **Cette semaine**:",
+        "line": 1516
+      },
+      {
+        "type": "h2",
+        "content": "Appendices",
+        "line": 1521
+      },
+      {
+        "type": "h3",
+        "content": "A. Structure de Module Détaillée",
+        "line": 1523
+      },
+      {
+        "type": "h4",
+        "content": "`01-authentification/`",
+        "line": 1525
+      },
+      {
+        "type": "h4",
+        "content": "`02-bases-de-donnees/`",
+        "line": 1531
+      },
+      {
+        "type": "h4",
+        "content": "`03-pages/`",
+        "line": 1537
+      },
+      {
+        "type": "h4",
+        "content": "`04-blocs/`",
+        "line": 1543
+      },
+      {
+        "type": "h4",
+        "content": "`05-integrations/`",
+        "line": 1548
+      },
+      {
+        "type": "h4",
+        "content": "`06-avance/`",
+        "line": 1553
+      },
+      {
+        "type": "h4",
+        "content": "`07-ressources/`",
+        "line": 1559
+      },
+      {
+        "type": "h3",
+        "content": "B. Outils et Technologies Recommandés",
+        "line": 1565
+      },
+      {
+        "type": "h4",
+        "content": "Framework de documentation:",
+        "line": 1567
+      },
+      {
+        "type": "h4",
+        "content": "Outils CI/CD:",
+        "line": 1572
+      },
+      {
+        "type": "h4",
+        "content": "Testing:",
+        "line": 1577
+      },
+      {
+        "type": "h3",
+        "content": "C. Calendrier de Mise en Œuvre (8 semaines)",
+        "line": 1582
+      },
+      {
+        "type": "h3",
+        "content": "D. Répartition des Ressources Humaines",
+        "line": 1616
+      },
+      {
+        "type": "h4",
+        "content": "Équipe principale:",
+        "line": 1618
+      },
+      {
+        "type": "h4",
+        "content": "Ressources techniques additionnelles:",
+        "line": 1631
+      },
+      {
+        "type": "h3",
+        "content": "E. Budget Estimatif",
+        "line": 1636
+      },
+      {
+        "type": "h4",
+        "content": "Coûts mensuels:",
+        "line": 1638
+      },
+      {
+        "type": "h4",
+        "content": "Coûts totaux estimés pour 8 semaines:",
+        "line": 1645
+      },
+      {
+        "type": "h2",
+        "content": "Conclusion",
+        "line": 1652
+      }
+    ],
+    "design_issues": [
+      "Multiple H1 headings - should have only one main title",
+      "Code block #1 may lack explanatory context",
+      "Code block #2 may lack explanatory context",
+      "Code block #3 may lack explanatory context",
+      "Inconsistent heading formatting detected"
+    ],
+    "recommendations": [
+      "Implement consistent typographic hierarchy: H1 (24pt), H2 (18pt), H3 (14pt), body (11pt)",
+      "Use modern sans-serif font like Inter or Open Sans for better readability",
+      "Implement monospace font (JetBrains Mono, Fira Code) for code blocks",
+      "Define and apply a consistent color palette throughout",
+      "Use Notion-inspired blue (#1D4ED8) for headings and links",
+      "Apply semantic colors: green for success, yellow for warnings, red for errors",
+      "Use light gray background (#F9FAFB) for code blocks with 1px border (#E5E7EB)",
+      "Increase whitespace: 2cm margins, 12pt between paragraphs, 24pt between sections",
+      "Implement grid system for consistent alignment",
+      "Consider two-column layout for desktop viewing",
+      "Add syntax highlighting for code blocks",
+      "Include line numbers for code references",
+      "Add explanatory context before each code example",
+      "Ensure code blocks have proper padding and background",
+      "Add clickable table of contents with internal links",
+      "Include PDF bookmarks for easy navigation",
+      "Add header with section title and footer with page numbers",
+      "Ensure WCAG AA compliance: minimum 4.5:1 text contrast",
+      "Use semantic HTML structure when converting to PDF",
+      "Add alt text for any images",
+      "Optimize tables for PDF: limit width, add descriptions",
+      "Consider grouping related list items under subheadings"
+    ]
+  },
+  "pdf_analysis": {
+    "file_name": "documentation-api-notion.pdf",
+    "file_size_bytes": 47339,
+    "file_size_kb": 46.2294921875,
+    "note": "Full PDF visual analysis requires PDF parsing libraries. Recommendations based on standard technical documentation issues."
+  },
+  "summary": {
+    "issues_count": 5,
+    "recommendations_count": 22,
+    "key_areas": [
+      "Hiérarchie typographique",
+      "Cohérence des couleurs",
+      "Espace blanc et mise en page",
+      "Lisibilité du code",
+      "Navigation dans le PDF",
+      "Accessibilité"
+    ],
+    "priority_focus": "Typographie et mise en page (fondamentaux du design)"
+  }
+}

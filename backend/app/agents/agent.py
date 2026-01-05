@@ -35,6 +35,10 @@ class OrchestratorAgent:
     Uses a multi-agent architecture with validation.
     """
 
+    # Flag to track if agent should stop
+    _stop_requested: bool = False
+    _interrupt_message: Optional[str] = None
+
     SYSTEM_PROMPT = """You are a versatile AI assistant.
 
 Use your tools to accomplish whatever the user asks. Be concise and natural.
@@ -102,12 +106,16 @@ Keep it CONCISE. Maximum 5-7 steps.
 
         # Conversation history
         self.messages = []
-        
+
         # Current execution plan
         self.current_plan: List[PlanStep] = []
-        
+
         # Session pipeline for complete context tracking
         self.pipeline: Optional[SessionPipeline] = None
+
+        # Stop/interrupt control
+        self._stop_requested = False
+        self._interrupt_message = None
 
     def set_project(self, project_id: str):
         """Set the current project and initialize its sandbox."""
@@ -119,6 +127,20 @@ Keep it CONCISE. Maximum 5-7 steps.
         self.messages = chat_history_manager.load(project_id)
         # Initialize session pipeline
         self.pipeline = SessionPipeline(project_id, str(self.sandbox.workspace_path))
+
+    def request_stop(self, interrupt_message: Optional[str] = None):
+        """Request the agent to stop execution."""
+        self._stop_requested = True
+        self._interrupt_message = interrupt_message
+
+    def reset_stop(self):
+        """Reset the stop flag."""
+        self._stop_requested = False
+        self._interrupt_message = None
+
+    def is_stop_requested(self) -> bool:
+        """Check if stop was requested."""
+        return self._stop_requested
 
     async def run(
         self,
@@ -137,6 +159,9 @@ Keep it CONCISE. Maximum 5-7 steps.
         """
         if not self.project_id or not self.sandbox or not self.tools:
             return "Error: No project selected. Please select or create a project first."
+
+        # Reset stop flag at the start of each run
+        self.reset_stop()
 
         # Add user message to history
         self.messages.append({"role": "user", "content": user_input})
@@ -174,11 +199,22 @@ Keep it CONCISE. Maximum 5-7 steps.
                     {"role": "user", "content": augmented_input} # Augmented current message
                 ]
                 
-                response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages_with_context
-                )
-                final_content = response.choices[0].message.content
+                max_retries = 3
+                for retry in range(max_retries):
+                    try:
+                        response = await self.client.chat.completions.create(
+                            model=self.model,
+                            messages=messages_with_context
+                        )
+                        final_content = response.choices[0].message.content
+                        if final_content and final_content.strip():
+                            break
+                        if retry == max_retries - 1:
+                            final_content = "I'm sorry, I'm having trouble generating a response. Please try again or rephrase."
+                    except Exception as e:
+                        if "model output must contain" in str(e) and retry < max_retries - 1:
+                            continue
+                        raise e
             else: # EXECUTE
                 # Complex task - use multi-agent workflow
                 # The planner will now see the file content in 'augmented_input'
@@ -297,14 +333,29 @@ Reply with ONLY 'A', 'B', or 'C'.
         
         # Step 2: Execute plan sequentially with validation
         results = []
-        
+        interrupted = False
+
         # Save initial plan state
         self._save_plan_state()
-        
+
         for i, step in enumerate(plan):
+            # Check if stop was requested
+            if self._stop_requested:
+                interrupted = True
+                step.status = "pending"  # Mark remaining as pending
+                if callback:
+                    await callback({
+                        "type": "execution_interrupted",
+                        "step_id": step.id,
+                        "message": self._interrupt_message or "Execution stopped by user",
+                        "completed_steps": i,
+                        "total_steps": len(plan)
+                    })
+                break
+
             step.status = "executing"
-            self._save_plan_state() # Save executing status
-            
+            self._save_plan_state()  # Save executing status
+
             if callback:
                 await callback({
                     "type": "step_started",
@@ -397,9 +448,15 @@ Reply with ONLY 'A', 'B', or 'C'.
         
         # Clear plan state on completion
         self._clear_plan_state()
-        
+
         # Step 3: Generate final summary
-        summary = "Task completed. Results:\n" + "\n".join(results)
+        if interrupted:
+            interrupt_context = self._interrupt_message or ""
+            summary = f"⚠️ Execution was interrupted by user.\n\nCompleted steps:\n" + "\n".join(results)
+            if interrupt_context:
+                summary += f"\n\nUser's message: {interrupt_context}"
+        else:
+            summary = "Task completed. Results:\n" + "\n".join(results)
         return summary
 
     def _save_plan_state(self):

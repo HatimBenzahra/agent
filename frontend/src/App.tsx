@@ -13,7 +13,17 @@ import {
   Sparkles,
   Wifi,
   WifiOff,
-  ChevronDown
+  ChevronDown,
+  StopCircle,
+  CheckCircle2,
+  Circle,
+  XCircle,
+  Zap,
+  ChevronRight,
+  FileEdit,
+  FileSearch,
+  Check,
+  AlertTriangle
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
@@ -24,8 +34,26 @@ import type { FileInfo } from './components/FileExplorer'
 import { ProjectSelector } from './components/ProjectSelector'
 import { CodeEditor } from './components/CodeEditor'
 import { PDFViewer } from './components/PDFViewer'
-import { PlanVisualizer } from './components/PlanVisualizer'
-import type { StepEvent } from './components/PlanVisualizer'
+
+// Types for inline plan display
+type PlanStep = {
+  id: string
+  objective: string
+  status: 'pending' | 'executing' | 'validating' | 'completed' | 'failed'
+}
+
+type Validation = {
+  success: boolean
+  feedback: string
+}
+
+type StepEvent = {
+  type: 'tool' | 'log'
+  tool?: string
+  message: string
+  status?: 'running' | 'success' | 'error'
+  timestamp: number
+}
 
 // Types
 type Project = {
@@ -316,6 +344,16 @@ function App() {
         setCurrentToolCalls([])
         setIsProcessing(false)
         setLastActivity(null)
+      } else if (data.type === 'stop_acknowledged') {
+        setLastActivity(data.message || 'Stopping...')
+      } else if (data.type === 'execution_interrupted') {
+        // Mark remaining steps as interrupted
+        setCurrentPlan(prev => prev.map(step =>
+          step.status === 'pending' || step.status === 'executing'
+            ? { ...step, status: 'pending' }
+            : step
+        ))
+        setLastActivity(`Interrupted: ${data.message || 'Stopped by user'}`)
       }
     }
 
@@ -413,6 +451,23 @@ function App() {
     setIsProcessing(true)
     setMessages(prev => [...prev, { role: 'user', content: msg }])
     ws.current?.send(msg)
+  }
+
+  const handleStop = () => {
+    if (!isConnected || !ws.current) return
+    ws.current.send('__STOP__')
+    setLastActivity('Stopping...')
+  }
+
+  const handleStopWithMessage = () => {
+    if (!isConnected || !ws.current || !input.trim()) return
+    const msg = input
+    setInput('')
+    // Add user message to chat
+    setMessages(prev => [...prev, { role: 'user', content: msg }])
+    // Send stop with message
+    ws.current.send(JSON.stringify({ type: 'stop', message: msg }))
+    setLastActivity('Interrupting with new instructions...')
   }
 
   const handleToggleFullscreen = () => {
@@ -565,25 +620,6 @@ function App() {
           )}
         </header>
 
-        {/* Plan Visualizer */}
-        <AnimatePresence>
-          {currentPlan.length > 0 && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="border-b border-zinc-800/50 overflow-hidden"
-            >
-              <PlanVisualizer
-                plan={currentPlan}
-                currentStepId={currentStepId}
-                validations={validations}
-                stepEvents={stepEvents}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
         {/* Messages */}
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-4xl mx-auto p-4 space-y-6">
@@ -710,7 +746,7 @@ function App() {
               </motion.div>
             ))}
 
-            {/* Processing indicator */}
+            {/* Processing indicator with inline plan */}
             {isProcessing && (
               <motion.div
                 initial={{ opacity: 0 }}
@@ -720,15 +756,213 @@ function App() {
                 <div className="shrink-0 p-2 rounded-xl bg-gradient-to-br from-blue-500/20 to-violet-500/20">
                   <Bot size={18} className="text-blue-400" />
                 </div>
-                <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl rounded-tl-sm px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex gap-1">
-                      <span className="w-2 h-2 bg-blue-400 rounded-full typing-dot" />
-                      <span className="w-2 h-2 bg-blue-400 rounded-full typing-dot" />
-                      <span className="w-2 h-2 bg-blue-400 rounded-full typing-dot" />
+                <div className="flex-1 bg-zinc-900/50 border border-zinc-800/50 rounded-2xl rounded-tl-sm px-4 py-3 space-y-3">
+                  {/* Show plan if available, otherwise show thinking */}
+                  {currentPlan.length > 0 ? (
+                    <>
+                      {/* Plan header with progress */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Sparkles size={14} className="text-violet-400" />
+                          <span className="text-sm font-medium text-zinc-300">Execution Plan</span>
+                          <span className="text-xs text-zinc-500">
+                            {currentPlan.filter(s => s.status === 'completed').length}/{currentPlan.length} steps
+                          </span>
+                        </div>
+                        {/* Progress bar */}
+                        <div className="w-20 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                          <motion.div
+                            className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 rounded-full"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(currentPlan.filter(s => s.status === 'completed').length / currentPlan.length) * 100}%` }}
+                            transition={{ duration: 0.3 }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Plan steps */}
+                      <div className="space-y-2">
+                        {currentPlan.map((step, index) => {
+                          const events = stepEvents[step.id] || []
+                          const validation = validations[step.id]
+                          const isExpanded = step.status === 'executing' || step.status === 'validating'
+
+                          return (
+                            <motion.div
+                              key={step.id}
+                              initial={{ opacity: 0, x: -10 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: index * 0.05 }}
+                              className={`relative border rounded-xl transition-all duration-300 ${
+                                step.status === 'completed' ? 'border-emerald-500/20 bg-emerald-500/5' :
+                                step.status === 'failed' ? 'border-red-500/20 bg-red-500/5' :
+                                step.status === 'executing' ? 'border-blue-500/50 bg-blue-500/5' :
+                                step.status === 'validating' ? 'border-violet-500/50 bg-violet-500/5' :
+                                'border-zinc-800 bg-zinc-900/50'
+                              }`}
+                            >
+                              {/* Step header */}
+                              <div className="flex items-start gap-3 p-3">
+                                {/* Icon */}
+                                <div className="relative flex flex-col items-center">
+                                  {step.status === 'completed' ? (
+                                    <motion.div
+                                      initial={{ scale: 0 }}
+                                      animate={{ scale: 1 }}
+                                      className="p-1 rounded-full bg-emerald-500/20"
+                                    >
+                                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                                    </motion.div>
+                                  ) : step.status === 'failed' ? (
+                                    <motion.div
+                                      initial={{ scale: 0 }}
+                                      animate={{ scale: 1 }}
+                                      className="p-1 rounded-full bg-red-500/20"
+                                    >
+                                      <XCircle className="w-4 h-4 text-red-400" />
+                                    </motion.div>
+                                  ) : step.status === 'executing' ? (
+                                    <motion.div
+                                      animate={{ rotate: 360 }}
+                                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                                      className="p-1 rounded-full bg-blue-500/20"
+                                    >
+                                      <Zap className="w-4 h-4 text-blue-400" />
+                                    </motion.div>
+                                  ) : step.status === 'validating' ? (
+                                    <motion.div
+                                      animate={{ scale: [1, 1.1, 1] }}
+                                      transition={{ duration: 1, repeat: Infinity }}
+                                      className="p-1 rounded-full bg-violet-500/20"
+                                    >
+                                      <Sparkles className="w-4 h-4 text-violet-400" />
+                                    </motion.div>
+                                  ) : (
+                                    <div className="p-1 rounded-full bg-zinc-800">
+                                      <Circle className="w-4 h-4 text-zinc-500" />
+                                    </div>
+                                  )}
+                                  {/* Connector line */}
+                                  {index < currentPlan.length - 1 && (
+                                    <div className={`w-0.5 flex-1 mt-1 ${
+                                      step.status === 'completed' ? 'bg-emerald-500/30' : 'bg-zinc-700'
+                                    }`} style={{ minHeight: '12px' }} />
+                                  )}
+                                </div>
+
+                                {/* Content */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-2 mb-1">
+                                    <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">
+                                      Step {index + 1}
+                                    </span>
+                                    {/* Status badge */}
+                                    {step.status === 'completed' && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400">Done</span>
+                                    )}
+                                    {step.status === 'failed' && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-500/10 text-red-400">Failed</span>
+                                    )}
+                                    {step.status === 'executing' && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/10 text-blue-400 flex items-center gap-1">
+                                        <Loader2 size={10} className="animate-spin" />
+                                        Running
+                                      </span>
+                                    )}
+                                    {step.status === 'validating' && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-violet-500/10 text-violet-400 flex items-center gap-1">
+                                        <Loader2 size={10} className="animate-spin" />
+                                        Validating
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className={`text-sm leading-relaxed ${
+                                    step.status === 'completed' ? 'text-zinc-400' :
+                                    step.status === 'failed' ? 'text-red-300' :
+                                    step.status === 'executing' || step.status === 'validating' ? 'text-zinc-100' :
+                                    'text-zinc-400'
+                                  }`}>
+                                    {step.objective}
+                                  </p>
+
+                                  {/* Expanded details for active step */}
+                                  <AnimatePresence>
+                                    {isExpanded && events.length > 0 && (
+                                      <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        className="mt-2 pt-2 border-t border-zinc-800/50"
+                                      >
+                                        <div className="space-y-1">
+                                          {events.slice(-5).map((event, idx) => (
+                                            <motion.div
+                                              key={idx}
+                                              initial={{ opacity: 0, x: -5 }}
+                                              animate={{ opacity: 1, x: 0 }}
+                                              className="flex items-center gap-2 text-xs"
+                                            >
+                                              <div className={`p-0.5 rounded ${
+                                                event.status === 'success' ? 'bg-emerald-500/20 text-emerald-400' :
+                                                event.status === 'error' ? 'bg-red-500/20 text-red-400' :
+                                                'bg-blue-500/20 text-blue-400'
+                                              }`}>
+                                                {event.tool === 'terminal' ? <TerminalIcon size={10} /> :
+                                                 event.tool === 'write_file' ? <FileEdit size={10} /> :
+                                                 event.tool === 'read_file' ? <FileSearch size={10} /> :
+                                                 <ChevronRight size={10} />}
+                                              </div>
+                                              <span className="text-zinc-400 truncate">{event.message}</span>
+                                            </motion.div>
+                                          ))}
+                                        </div>
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
+
+                                  {/* Validation feedback */}
+                                  {validation && (
+                                    <motion.div
+                                      initial={{ opacity: 0, y: 5 }}
+                                      animate={{ opacity: 1, y: 0 }}
+                                      className={`mt-2 p-2 rounded-lg flex items-start gap-2 ${
+                                        validation.success
+                                          ? 'bg-emerald-500/10 border border-emerald-500/20'
+                                          : 'bg-red-500/10 border border-red-500/20'
+                                      }`}
+                                    >
+                                      {validation.success ? (
+                                        <Check size={12} className="text-emerald-400 mt-0.5" />
+                                      ) : (
+                                        <AlertTriangle size={12} className="text-red-400 mt-0.5" />
+                                      )}
+                                      <span className={`text-xs ${
+                                        validation.success ? 'text-emerald-400/80' : 'text-red-400/80'
+                                      }`}>
+                                        {validation.feedback}
+                                      </span>
+                                    </motion.div>
+                                  )}
+                                </div>
+                              </div>
+                            </motion.div>
+                          )
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    /* No plan yet - show thinking indicator */
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-1">
+                        <span className="w-2 h-2 bg-blue-400 rounded-full typing-dot" />
+                        <span className="w-2 h-2 bg-blue-400 rounded-full typing-dot" />
+                        <span className="w-2 h-2 bg-blue-400 rounded-full typing-dot" />
+                      </div>
+                      <span className="text-sm text-zinc-500">
+                        {lastActivity || 'Agent is thinking...'}
+                      </span>
                     </div>
-                    <span className="text-sm text-zinc-500">Agent is thinking...</span>
-                  </div>
+                  )}
                 </div>
               </motion.div>
             )}
@@ -747,23 +981,74 @@ function App() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
-                    sendMessage()
+                    if (isProcessing && input.trim()) {
+                      // Send interrupt with message
+                      handleStopWithMessage()
+                    } else {
+                      sendMessage()
+                    }
                   }
                 }}
-                placeholder={isConnected ? "Ask me anything... (Shift+Enter for new line)" : "Connect to a project to start chatting"}
-                disabled={isProcessing || !isConnected}
+                placeholder={
+                  !isConnected
+                    ? "Connect to a project to start chatting"
+                    : isProcessing
+                      ? "Type to interrupt and redirect the agent..."
+                      : "Ask me anything... (Shift+Enter for new line)"
+                }
+                disabled={!isConnected}
                 rows={1}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 pr-12 text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 disabled:opacity-50 resize-none transition-all"
+                className={`w-full bg-zinc-950 border rounded-xl px-4 py-3 pr-24 text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:border-blue-500/50 resize-none transition-all ${
+                  isProcessing
+                    ? 'border-orange-500/50 focus:ring-orange-500/50'
+                    : 'border-zinc-800 focus:ring-blue-500/50'
+                }`}
                 style={{ minHeight: '48px', maxHeight: '200px' }}
               />
-              <button
-                onClick={sendMessage}
-                disabled={isProcessing || !isConnected || !input.trim()}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-              >
-                <Send size={16} />
-              </button>
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                {/* Stop button - shown during processing */}
+                {isProcessing && (
+                  <motion.button
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    onClick={handleStop}
+                    className="p-2 rounded-lg bg-red-600 text-white hover:bg-red-500 transition-all"
+                    title="Stop execution"
+                  >
+                    <StopCircle size={16} />
+                  </motion.button>
+                )}
+                {/* Send button */}
+                <button
+                  onClick={() => {
+                    if (isProcessing && input.trim()) {
+                      handleStopWithMessage()
+                    } else {
+                      sendMessage()
+                    }
+                  }}
+                  disabled={!isConnected || (!isProcessing && !input.trim())}
+                  className={`p-2 rounded-lg text-white transition-all ${
+                    isProcessing && input.trim()
+                      ? 'bg-orange-600 hover:bg-orange-500'
+                      : 'bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:cursor-not-allowed'
+                  }`}
+                  title={isProcessing && input.trim() ? "Send and interrupt" : "Send message"}
+                >
+                  <Send size={16} />
+                </button>
+              </div>
             </div>
+            {/* Helper text during processing */}
+            {isProcessing && (
+              <motion.p
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-xs text-zinc-500 mt-2 text-center"
+              >
+                Press <span className="text-orange-400">Stop</span> to cancel, or type a message to interrupt and redirect
+              </motion.p>
+            )}
           </div>
         </div>
       </div>

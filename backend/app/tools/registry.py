@@ -127,6 +127,28 @@ class ToolRegistry:
             execute=self._execute_delete_file
         ))
 
+        # Search tool
+        self.register(Tool(
+            name="search",
+            description="Search for a string or pattern in the codebase/workspace files.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The string or regex pattern to search for"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Optional directory/file to search in (defaults to root)",
+                        "default": "."
+                    }
+                },
+                "required": ["query"]
+            },
+            execute=self._execute_search
+        ))
+
     def register(self, tool: Tool):
         """Register a new tool."""
         self.tools[tool.name] = tool
@@ -264,4 +286,25 @@ class ToolRegistry:
             success=success,
             output=message,
             data={"path": path}
+        )
+
+    async def _execute_search(self, args: dict) -> ToolResult:
+        """Search for content using grep."""
+        query = args.get("query", "")
+        path = args.get("path", ".")
+        
+        # Use grep -r
+        command = f"grep -rI --max-count=10 --exclude-dir=.git '{query}' {path}"
+        result = await self.sandbox.execute(command)
+        
+        if result.return_code != 0 and not result.stdout:
+            return ToolResult(
+                success=True, # Grep returning no results means nothing found, not an error
+                output=f"No matches found for '{query}'"
+            )
+            
+        return ToolResult(
+            success=True,
+            output=result.stdout,
+            data={"query": query, "path": path}
         )
