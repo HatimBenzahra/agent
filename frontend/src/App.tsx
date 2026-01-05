@@ -34,11 +34,15 @@ function App() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    ws.current = new WebSocket('ws://localhost:8000/ws/chat')
+    // Prevent double connection in StrictMode
+    if (ws.current && ws.current.readyState !== WebSocket.CLOSED) return;
+
+    const socket = new WebSocket('ws://localhost:8000/ws/chat')
+    ws.current = socket
     
-    ws.current.onopen = () => console.log('Connected to backend')
+    socket.onopen = () => console.log('Connected to backend')
     
-    ws.current.onmessage = (event) => {
+    socket.onmessage = (event) => {
       const data = JSON.parse(event.data)
       
       if (data.type === 'plan') {
@@ -50,7 +54,6 @@ function App() {
         if (data.status === 'started') {
           setActiveStep(data.step || 0)
         }
-        // Optional: Add logs to a specialized log feed if needed
       } 
       else if (data.type === 'result') {
         setMessages(prev => [...prev, { role: 'agent', content: data.content, type: 'result' }])
@@ -63,7 +66,12 @@ function App() {
       }
     }
 
-    return () => ws.current?.close()
+    return () => {
+        // Cleanup on unmount
+        if (socket.readyState === WebSocket.OPEN) {
+            socket.close()
+        }
+    }
   }, [])
 
   useEffect(() => {
