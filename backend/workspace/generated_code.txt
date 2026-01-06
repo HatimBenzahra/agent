@@ -1,0 +1,19 @@
+# Titre principal
+
+## Sous-titre
+
+Voici un paragraphe avec **gras** et *italique*.
+
+### Liste à puces
+
+- Élément 1
+- Élément 2
+- Élément 3
+
+### Liste numérotée
+
+1. Premier élément
+2. Deuxième élément
+3. Troisième élément
+
+### Code

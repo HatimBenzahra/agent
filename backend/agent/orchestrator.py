@@ -62,9 +62,17 @@ class OrchestratorAgent:
     
     def generate_orchestrated_plan(self, task):
         """Génère un plan orchestré avec agents spécialisés"""
-        prompt = f"""En tant qu'agent orchestrateur expert, analyse la tâche suivante et génère un plan d'action détaillé. 
+        prompt = f"""En tant qu'agent orchestrateur expert avec accès permanent au terminal, analyse la tâche suivante et génère un plan d'action détaillé. 
 
-Pour chaque étape du plan, identifie la nature de la tâche (code, vision, général, ou simple) pour permettre l'assignation à un agent spécialisé.
+Tu as accès COMPLET au terminal Linux pour :
+- Installer des paquets (apt-get install)
+- Créer/éditer/lire des fichiers
+- Compiler du code
+- Exécuter des commandes
+- Faire des recherches web (curl)
+- Tester des programmes
+
+Pour chaque étape, précise les commandes terminales à exécuter.
 
 Tâche : {task}
 
@@ -73,11 +81,13 @@ PLAN GLOBAL : [brève description du plan]
 
 ÉTAPE 1 : [titre de l'étape]
 - Description : [description détaillée]
+- Commandes terminales : [liste des commandes exactes à exécuter]
 - Type de tâche : [code/vision/général/simple]
 - Complexité : [faible/moyenne/élevée]
 
 ÉTAPE 2 : [titre de l'étape]
 - Description : [description détaillée]
+- Commandes terminales : [liste des commandes exactes à exécuter]
 - Type de tâche : [code/vision/général/simple]
 - Complexité : [faible/moyenne/élevée]
 
@@ -204,11 +214,19 @@ PLAN GLOBAL : [brève description du plan]
         output = "🎺 PLAN ORCHESTRÉ PAR L'AGENT CHEF\n"
         output += "=" * 60 + "\n\n"
         
-        for step in orchestrated_plan:
-            agent = step['agent']
-            output += f"📍 ÉTAPE {step['step_number']} : {step['title']}\n"
-            output += f"📝 Description : {step['description']}\n"
-            output += f"🏷️  Type : {step['task_type']} | 📊 Complexité : {step['complexity']}\n"
+        for i, step in enumerate(orchestrated_plan, 1):
+            agent = step.get('agent', {'name': 'Unknown', 'model': 'unknown', 'description': 'No description'})
+            
+            # Utiliser i comme step_number si non défini
+            step_num = step.get('step_number', i)
+            title = step.get('title', f"Étape {step_num}")
+            description = step.get('description', 'Pas de description')
+            task_type = step.get('task_type', 'général')
+            complexity = step.get('complexity', 'moyenne')
+            
+            output += f"📍 ÉTAPE {step_num} : {title}\n"
+            output += f"📝 Description : {description}\n"
+            output += f"🏷️  Type : {task_type} | 📊 Complexité : {complexity}\n"
             output += f"🤖 Agent assigné : {agent['name']}\n"
             output += f"🔧 Modèle : {agent['model']}\n"
             output += f"💡 Spécialité : {agent['description']}\n"
